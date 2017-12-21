@@ -18,7 +18,7 @@
 #include <iostream>
 #include <algorithm>
 
-//#include "cuda_util.h"
+#include "header/cuda_util.h"
 #include <cuda_runtime.h>
 #include <cuda.h>
 
@@ -99,9 +99,9 @@ mean(float* gdata, int n) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // program entry point
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-int
-main(int /*argc*/, char** /*argv*/) {
-
+//int
+//main(int /*argc*/, char** /*argv*/) {
+/*
 	const int n = 128;
 	float* data = (float*)malloc(sizeof(float) * n);
 	for (unsigned int i = 0; i < n; ++i) {
@@ -172,4 +172,4 @@ main(int /*argc*/, char** /*argv*/) {
 	std::getchar();
 
 	return EXIT_SUCCESS;
-}
+}*/

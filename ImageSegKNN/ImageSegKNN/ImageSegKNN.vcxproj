@@ -11,11 +11,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="main.cpp" />
     <ClCompile Include="src\image.cpp" />
     <ClCompile Include="src\RgbLab.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="test.cu" />
+    <CudaCompile Include="src\test.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="header\cuda_util.h" />
