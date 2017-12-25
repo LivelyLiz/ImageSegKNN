@@ -1,4 +1,4 @@
-#include "RgbLab.h";
+#include "header/cuda_RgbLab.cuh";
 
 // conversion matrices for sRGB to Lab with D50 white
 float const RgbLab::RgbToXyzMatrix[3][3] = { { 0.4360747,  0.3850649,  0.1430804},

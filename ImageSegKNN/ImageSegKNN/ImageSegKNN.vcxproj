@@ -11,7 +11,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="src\KNN.cpp" />
+    <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\image.cpp" />
     <ClCompile Include="src\RgbLab.cpp" />
   </ItemGroup>
@@ -19,9 +20,11 @@
     <CudaCompile Include="src\test.cu" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="header\cuda_RgbLab.cuh" />
     <ClInclude Include="header\cuda_util.h" />
     <ClInclude Include="header\image.h" />
-    <ClInclude Include="RgbLab.h" />
+    <ClInclude Include="header\RgbLab.h" />
+    <ClInclude Include="header\KNN.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{7F16BFA5-8823-41E9-BB70-B8D946BD8FD7}</ProjectGuid>

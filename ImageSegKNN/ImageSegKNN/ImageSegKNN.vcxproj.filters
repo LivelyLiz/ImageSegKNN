@@ -15,7 +15,13 @@
     <ClInclude Include="header\image.h">
       <Filter>header</Filter>
     </ClInclude>
-    <ClInclude Include="RgbLab.h">
+    <ClInclude Include="header\cuda_RgbLab.cuh">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="header\RgbLab.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="header\KNN.h">
       <Filter>header</Filter>
     </ClInclude>
   </ItemGroup>
@@ -26,7 +32,10 @@
     <ClCompile Include="src\RgbLab.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="src\main.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\KNN.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
