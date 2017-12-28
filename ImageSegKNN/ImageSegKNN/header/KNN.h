@@ -10,11 +10,14 @@ public:
 	~KNN();
 
 	void AddColorToTrainingsset(float* color, int labelID);
-	void AddColorsToTrainingsset(float** colors, int labelID);
+	void AddColorsToTrainingsset(float** colors, int labelID, int n);
 	
 	float* GetLabelColor(int labelID);
 
 	int DetermineLabel(int k, float* data, bool weighted);
+
+	template<int k>
+	int DetermineLabel(float* data, bool weighted);
 
 private:
 	// number of labels

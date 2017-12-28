@@ -1,3 +1,5 @@
+// from http://people.sc.fsu.edu/~jburkardt/cpp_src/ppma_io/ppma_io.html
+
 # pragma once
 # include <cstdlib>
 # include <iostream>

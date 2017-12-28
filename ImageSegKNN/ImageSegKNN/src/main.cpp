@@ -25,7 +25,7 @@ void main(){
 	for(int i = 0; i < xsize*ysize; ++i)
 	{
 		float color[3] = { r[0][i] / 255.0, g[0][i] / 255.0, b[0][i] / 255.0 };
-		float* labelcolor = knn.GetLabelColor(knn.DetermineLabel(2, &color[0], true));
+		float* labelcolor = knn.GetLabelColor(knn.DetermineLabel<2>(&color[0], true));
 		rnew[i] = labelcolor[0] * 255;
 		gnew[i] = labelcolor[1] * 255;
 		bnew[i] = labelcolor[2] * 255;
