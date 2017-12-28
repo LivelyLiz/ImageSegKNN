@@ -24,6 +24,9 @@
     <ClInclude Include="header\KNN.h">
       <Filter>header</Filter>
     </ClInclude>
+    <ClInclude Include="header\ppma_io.hpp">
+      <Filter>header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\image.cpp">
@@ -36,6 +39,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\KNN.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ppma_io.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

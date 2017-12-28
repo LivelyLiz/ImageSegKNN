@@ -1,38 +1,48 @@
 #pragma once
 #include "header/cuda_RgbLab.cuh"
 #include "header/KNN.h"
+#include "header/ppma_io.hpp"
 #include <iostream>
 
 void main(){
 
-	// load image with stb_image will result in an char* array?
+	std::string file = "images/ColorTest.ppm";
+	int xsize = 200;
+	int ysize = 200;
+	int maxrgb = 255;
 
 	KNN knn;
+	int** r = (int**) malloc(sizeof(int*));
+	int** g = (int**) malloc(sizeof(int*));
+	int** b = (int**) malloc(sizeof(int*));
 
-	float whitergb[3] = { 1.0, 1.0, 1.0 };
-	float blackrgb[3] = { 0.0, 0.0, 0.0 };
-	float fairgreyrgb[3] = { 0.8, 0.8, 0.8 };
-	float greyrgb[3] = { 0.5, 0.5, 0.5 };
-	float darkgreyrgb[3] = { 0.2, 0.2, 0.2 };
+	int* rnew = (int*) malloc(sizeof(int) * xsize * ysize);
+	int* gnew = (int*) malloc(sizeof(int) * xsize * ysize);
+	int* bnew = (int*) malloc(sizeof(int) * xsize * ysize);
 
-	float* white = &whitergb[0];
-	float* black = &blackrgb[0];
-	float* fairgrey = &fairgreyrgb[0];
-	float* grey = &greyrgb[0];
-	float* darkgrey = &darkgreyrgb[0];
+	ppma_read(file, xsize, ysize, maxrgb, r, g, b);
+	
+	for(int i = 0; i < xsize*ysize; ++i)
+	{
+		float color[3] = { r[0][i] / 255.0, g[0][i] / 255.0, b[0][i] / 255.0 };
+		float* labelcolor = knn.GetLabelColor(knn.DetermineLabel(2, &color[0], true));
+		rnew[i] = labelcolor[0] * 255;
+		gnew[i] = labelcolor[1] * 255;
+		bnew[i] = labelcolor[2] * 255;
+	}
 
-	RgbLab::RgbToLab(white);
-
-	std::cout << white[0] << ", " << white[1] << ", " << white[2] << std::endl;
-
-	RgbLab::LabToRgb(white);
-
-	std::cout << white[0] << ", " << white[1] << ", " << white[2] << std::endl;
-
-	int label = knn.DetermineLabel(1, fairgrey, true);
-
-	std::cout << label << std::endl;
+	ppma_write("images/ColorTestSeg.ppm", xsize, ysize, rnew, gnew, bnew);
 
 	char a;
 	std::cin >> a;
+
+	free(*r);
+	free(r);
+	free(*g);
+	free(g);
+	free(*b);
+	free(b);
+	free(rnew);
+	free(gnew);
+	free(bnew);
 }
