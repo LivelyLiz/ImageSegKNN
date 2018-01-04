@@ -2,14 +2,15 @@
 #include "header/KNN.h"
 #include <cstdlib>
 #include "header/cuda_RgbLab.cuh"
+#include "header/MinHeap.h"
 
-
-KNN::KNN() : labelCount(2) 
+//only possible with 2 labels
+KNN<2>::KNN() : trainingEntriesCount(2), numColorsPerLabel(8)
 {
 	//  allocating memory and initializing data
-
-	numColorsPerLabel = 8;
 	
+	int labelCount = 2;
+
 	//not sure about this pointer stuff here
 	trainingsSet = (float***) std::malloc(sizeof(float**) * labelCount);
 	for(int i = 0; i < labelCount; ++i)
@@ -45,7 +46,8 @@ KNN::KNN() : labelCount(2)
 	labelColors[1] = &red[0];
 }
 
-KNN::KNN(int labelCount, float** labelColors) : labelCount(labelCount), labelColors(labelColors) 
+template <int labelCount>
+KNN<labelCount>::KNN(float** labelColors) : labelColors(labelColors), trainingEntriesCount(0) 
 {
 	trainingsSetCount = (int*)std::malloc(sizeof(float) * labelCount);
 
@@ -58,13 +60,18 @@ KNN::KNN(int labelCount, float** labelColors) : labelCount(labelCount), labelCol
 	}
 }
 
-KNN::KNN(int labelCount, float** labelColors, float*** ts, int* trainingsSetCount, int maxColorsInLabel) : labelCount(labelCount), labelColors(labelColors), trainingsSet(ts),
-	trainingsSetCount(trainingsSetCount), numColorsPerLabel(maxColorsInLabel)
+template <int labelCount>
+KNN<labelCount>::KNN(float** labelColors, float*** ts, int* trainingsSetCount, int maxColorsInLabel) : labelColors(labelColors), trainingsSet(ts),
+	trainingsSetCount(trainingsSetCount), numColorsPerLabel(maxColorsInLabel), trainingEntriesCount(0)
 {
-	
+	for (int i = 0; i < labelCount; ++i)
+	{
+		trainingEntriesCount += trainingsSetCount[i];
+	}
 }
 
-KNN::~KNN()
+template <int labelCount>
+KNN<labelCount>::~KNN()
 {
 	for(int i = 0; i < labelCount; ++i)
 	{
@@ -81,7 +88,8 @@ KNN::~KNN()
 	free(labelColors);
 }
 
-float* KNN::GetLabelColor(int labelID)
+template <int labelCount>
+float* KNN<labelCount>::GetLabelColor(int labelID)
 {
 	if(labelID < labelCount)
 	{
@@ -90,17 +98,28 @@ float* KNN::GetLabelColor(int labelID)
 	return nullptr;
 }
 
-// naiive implementation of finding the k nearest neighbours O(k * n) where n == number of trainingsdata
-// any other implementation might be better
-
-int KNN::DetermineLabel(int k, float* data, bool weighted)
+template <int labelCount>
+int KNN<labelCount>::DetermineLabelLab(int k, float* data, bool weighted)
 {
-	float** neighbours = (float**)malloc(sizeof(float) * k * 3);
-	float* distances = (float*)malloc(sizeof(float) * k);
-	int* labels = (int *)malloc(sizeof(int) * k);
-	float* voteCount = (float*)malloc(sizeof(float)*labelCount);
+	MinHeap<NeighbourEntry, maxNumberTrainingEntries> heap;
 
-	// initialize allocated memory;
+	float* datalab = &RgbLab::RgbToLab(data).color[0];
+
+	// go through each trainingsdata
+	for (int i = 0; i < labelCount; ++i)
+	{
+		for (int j = 0; j < trainingsSetCount[i]; ++j)
+		{
+			float* tslab = &RgbLab::RgbToLab(trainingsSet[i][j]).color[0];
+
+			// get the distance
+			float length = RgbLab::ColorDistance(datalab, tslab);
+
+			heap.Insert(NeighbourEntry(length, i));
+		}
+	}
+
+	float voteCount[labelCount];
 	for (int i = 0; i < labelCount; ++i)
 	{
 		voteCount[i] = 0;
@@ -108,50 +127,14 @@ int KNN::DetermineLabel(int k, float* data, bool weighted)
 
 	for (int i = 0; i < k; ++i)
 	{
-		distances[i] = 10.0;
-		labels[i] = 0;
-		neighbours[i] = nullptr;
-	}
-
-	// go through each trainingsdata
-	for (int i = 0; i < labelCount; ++i)
-	{
-		for (int j = 0; j < trainingsSetCount[i]; ++j)
+		NeighbourEntry ne = heap.Pop();
+		if (weighted)
 		{
-			// get the distance
-			float length = RgbLab::ColorDistance(data, trainingsSet[i][j], 3);
-			for (int l = 0; l < k; ++l)
-			{
-				// if we find something closer than the latest k nearest
-				// update our list
-				if (length < distances[l])
-				{
-					// update the votes
-					if (weighted)
-					{
-						voteCount[i] += 1.0 / length;
-						voteCount[labels[k - 1]] -= 1.0 / distances[k - 1];
-					}
-					else
-					{
-						voteCount[i] += 1.0;
-						voteCount[labels[k - 1]] -= 1.0;
-					}
-
-					// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
-					for (int m = k - 2; m > l; --m)
-					{
-						labels[m + 1] = labels[m];
-						neighbours[m + 1] = neighbours[m];
-						distances[m + 1] = distances[m];
-					}
-					labels[l] = i;
-					neighbours[l] = trainingsSet[i][j];
-					distances[l] = length;
-
-					break;
-				}
-			}
+			voteCount[ne.label] += 1.0 / ne.distance;
+		}
+		else
+		{
+			voteCount[ne.label] += 1.0;
 		}
 	}
 
@@ -168,41 +151,14 @@ int KNN::DetermineLabel(int k, float* data, bool weighted)
 		}
 	}
 
-	free(neighbours);
-	free(labels);
-	free(distances);
-	free(voteCount);
-
 	return winningLabel;
 }
 
-// using a non type template function enables compile time optimization
-// and it is also possible to allocate memory on the stack instead of heap
-// in CUDA this means it is at least possible to have the arrays in the registers
-// instead of global memory -> performance improvement!!
-
-// maybe make label count also a template parameter, because vote count will not be in registers otherwise
-
-template <int k>
-int KNN::DetermineLabel(float* data, bool weighted)
+// minheap implementation
+template <int labelCount>
+int KNN<labelCount>::DetermineLabelRgb(int k, float* data, bool weighted)
 {
-	float* neighbours[k];
-	float distances[k];
-	int labels[k];
-	float* voteCount = (float*)malloc(sizeof(float)*labelCount);;
-
-	// initialize allocated memory;
-	for (int i = 0; i < labelCount; ++i)
-	{
-		voteCount[i] = 0;
-	}
-
-	for (int i = 0; i < k; ++i)
-	{
-		distances[i] = 10.0;
-		labels[i] = 0;
-		neighbours[i] = nullptr;
-	}
+	MinHeap<NeighbourEntry, maxNumberTrainingEntries> heap;
 
 	// go through each trainingsdata
 	for (int i = 0; i < labelCount; ++i)
@@ -210,39 +166,28 @@ int KNN::DetermineLabel(float* data, bool weighted)
 		for (int j = 0; j < trainingsSetCount[i]; ++j)
 		{
 			// get the distance
-			float length = RgbLab::ColorDistance(data, trainingsSet[i][j], 3);
-			for (int l = 0; l < k; ++l)
-			{
-				// if we find something closer than the latest k nearest
-				// update our list
-				if (length < distances[l])
-				{
-					// update the votes
-					if (weighted)
-					{
-						voteCount[i] += 1.0 / length;
-						voteCount[labels[k - 1]] -= 1.0 / distances[k - 1];
-					}
-					else
-					{
-						voteCount[i] += 1.0;
-						voteCount[labels[k - 1]] -= 1.0;
-					}
+			float length = RgbLab::ColorDistance(data, trainingsSet[i][j]);
+			
+			heap.Insert(NeighbourEntry(length, i));
+		}
+	}
 
-					// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
-					for (int m = k - 2; m > l; --m)
-					{
-						labels[m + 1] = labels[m];
-						neighbours[m + 1] = neighbours[m];
-						distances[m + 1] = distances[m];
-					}
-					labels[l] = i;
-					neighbours[l] = trainingsSet[i][j];
-					distances[l] = length;
+	float voteCount[labelCount];
+	for (int i = 0; i < labelCount; ++i)
+	{
+		voteCount[i] = 0;
+	}
 
-					break;
-				}
-			}
+	for(int i = 0; i < k; ++i)
+	{
+		NeighbourEntry ne = heap.Pop();
+		if(weighted)
+		{
+			voteCount[ne.label] += 1.0 / ne.distance;
+		}
+		else
+		{
+			voteCount[ne.label] += 1.0;
 		}
 	}
 
@@ -259,24 +204,11 @@ int KNN::DetermineLabel(float* data, bool weighted)
 		}
 	}
 
-	free(voteCount);
-
 	return winningLabel;
 }
 
-// needed to be able to link the files
-// if any other than those values are used there will be a linker error
-// use mainly prime numbers to have the best result
-template int KNN::DetermineLabel<1>(float* data, bool weighted);
-template int KNN::DetermineLabel<2>(float* data, bool weighted);
-template int KNN::DetermineLabel<3>(float* data, bool weighted);
-template int KNN::DetermineLabel<5>(float* data, bool weighted);
-template int KNN::DetermineLabel<7>(float* data, bool weighted);
-template int KNN::DetermineLabel<11>(float* data, bool weighted);
-template int KNN::DetermineLabel<13>(float* data, bool weighted);
-
-
-void KNN::AddColorToTrainingsset(float* color, int labelID)
+template<int labelCount>
+void KNN<labelCount>::AddColorToTrainingsset(float* color, int labelID)
 {
 	if(labelID > labelCount-1)
 	{
@@ -305,7 +237,8 @@ void KNN::AddColorToTrainingsset(float* color, int labelID)
 	trainingsSetCount[labelID]++;
 }
 
-void KNN::AddColorsToTrainingsset(float** colors, int labelID, int n)
+template<int labelCount>
+void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n)
 {
 	if (labelID > labelCount - 1)
 	{
@@ -343,3 +276,13 @@ void KNN::AddColorsToTrainingsset(float** colors, int labelID, int n)
 		trainingsSetCount[labelID]++;
 	}
 }
+
+//explicit template instantiation needed for linking
+template class KNN<2>;
+template class KNN<3>;
+template class KNN<4>;
+template class KNN<5>;
+template class KNN<6>;
+template class KNN<7>;
+template class KNN<8>;
+template class KNN<9>;

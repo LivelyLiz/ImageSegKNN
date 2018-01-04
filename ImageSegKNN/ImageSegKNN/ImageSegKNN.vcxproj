@@ -27,6 +27,7 @@
     <ClInclude Include="header\ppma_io.hpp" />
     <ClInclude Include="header\RgbLab.h" />
     <ClInclude Include="header\KNN.h" />
+    <ClInclude Include="header\MinHeap.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{7F16BFA5-8823-41E9-BB70-B8D946BD8FD7}</ProjectGuid>

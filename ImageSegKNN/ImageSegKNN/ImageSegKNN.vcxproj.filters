@@ -27,6 +27,9 @@
     <ClInclude Include="header\ppma_io.hpp">
       <Filter>header</Filter>
     </ClInclude>
+    <ClInclude Include="header\MinHeap.h">
+      <Filter>header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\image.cpp">

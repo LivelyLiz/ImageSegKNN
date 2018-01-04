@@ -1,11 +1,14 @@
 // lots and lots of pointers and stuff, we might want to change that? But we need this on cuda device, so it's difficult
+#pragma once
 
+//number of labels
+template <int labelCount>
 class KNN
 {
 public:
 	KNN();
-	KNN(int labelCount, float** labelColors);
-	KNN(int labelCount, float** labelColors, float*** trainingsSet, int* trainingsSetCount,
+	KNN(float** labelColors);
+	KNN(float** labelColors, float*** trainingsSet, int* trainingsSetCount,
 		int numColorsPerLabel);
 	~KNN();
 
@@ -14,18 +17,171 @@ public:
 	
 	float* GetLabelColor(int labelID);
 
-	int DetermineLabel(int k, float* data, bool weighted);
+	int DetermineLabelRgb(int k, float* data, bool weighted);
+	int DetermineLabelLab(int k, float* data, bool weighted);
 
-	template<int k>
-	int DetermineLabel(float* data, bool weighted);
+	// no-heap implementation 
+	// using a non type template function enables compile time optimization
+	// and it is also possible to allocate memory on the stack instead of heap
+	// in CUDA this means it is at least possible to have the arrays in the registers
+	// instead of global memory -> performance improvement!!
+	template <int k>
+	int DetermineLabelRgb(float* data, bool weighted)
+	{
+		NeighbourEntry neighboursEntry[k];
+		float voteCount[labelCount];
+
+		// initialize allocated memory;
+		for (int i = 0; i < labelCount; ++i)
+		{
+			voteCount[i] = 0;
+		}
+
+		for (int i = 0; i < k; ++i)
+		{
+			neighboursEntry[i] = NeighbourEntry(10000, 0);
+		}
+
+		// go through each trainingsdata
+		for (int i = 0; i < labelCount; ++i)
+		{
+			for (int j = 0; j < trainingsSetCount[i]; ++j)
+			{
+				// get the distance
+				float length = RgbLab::ColorDistance(data, trainingsSet[i][j]);
+				for (int l = 0; l < k; ++l)
+				{
+					// if we find something closer than the latest k nearest
+					// update our list
+					if (length < neighboursEntry[l].distance)
+					{
+						// update the votes
+						if (weighted)
+						{
+							voteCount[i] += 1.0 / length;
+							voteCount[neighboursEntry[k - 1].label] -= 1.0 / neighboursEntry[k - 1].distance;
+						}
+						else
+						{
+							voteCount[i] += 1.0;
+							voteCount[neighboursEntry[k - 1].label] -= 1.0;
+						}
+
+						// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
+						for (int m = k - 2; m > l; --m)
+						{
+							neighboursEntry[m + 1] = neighboursEntry[m];
+						}
+
+						neighboursEntry[l] = NeighbourEntry(length, i);
+
+						break;
+					}
+				}
+			}
+		}
+
+		// determine the right label based on votes
+		float maxVote = 0;
+		int winningLabel = 0;
+
+		for (int i = 0; i < labelCount; ++i)
+		{
+			if (maxVote < voteCount[i])
+			{
+				maxVote = voteCount[i];
+				winningLabel = i;
+			}
+		}
+
+		return winningLabel;
+	}
+
+	template <int k>
+	int DetermineLabelLab(float* data, bool weighted)
+	{
+		NeighbourEntry neighboursEntry[k];
+		float voteCount[labelCount];
+
+		// initialize allocated memory;
+		for (int i = 0; i < labelCount; ++i)
+		{
+			voteCount[i] = 0;
+		}
+
+		for (int i = 0; i < k; ++i)
+		{
+			neighboursEntry[i] = NeighbourEntry(10000, 0);
+		}
+
+		float* datalab = &RgbLab::RgbToLab(data).color[0];
+
+		// go through each trainingsdata
+		for (int i = 0; i < labelCount; ++i)
+		{
+			for (int j = 0; j < trainingsSetCount[i]; ++j)
+			{
+				float* tslab = &RgbLab::RgbToLab(trainingsSet[i][j]).color[0];
+
+				// get the distance
+				float length = RgbLab::ColorDistance(datalab, tslab);
+				for (int l = 0; l < k; ++l)
+				{
+					// if we find something closer than the latest k nearest
+					// update our list
+					if (length < neighboursEntry[l].distance)
+					{
+						// update the votes
+						if (weighted)
+						{
+							voteCount[i] += 1.0 / length;
+							voteCount[neighboursEntry[k - 1].label] -= 1.0 / neighboursEntry[k - 1].distance;
+						}
+						else
+						{
+							voteCount[i] += 1.0;
+							voteCount[neighboursEntry[k - 1].label] -= 1.0;
+						}
+
+						// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
+						for (int m = k - 2; m > l; --m)
+						{
+							neighboursEntry[m + 1] = neighboursEntry[m];
+						}
+
+						neighboursEntry[l] = NeighbourEntry(length, i);
+
+						break;
+					}
+				}
+			}
+		}
+
+		// determine the right label based on votes
+		float maxVote = 0;
+		int winningLabel = 0;
+
+		for (int i = 0; i < labelCount; ++i)
+		{
+			if (maxVote < voteCount[i])
+			{
+				maxVote = voteCount[i];
+				winningLabel = i;
+			}
+		}
+
+		return winningLabel;
+	}
 
 private:
-	// number of labels
-	const int labelCount;
-	
 	// color which each label will be assigned to
 	float** labelColors;
 
+	//max number of training set entries we can have
+	static const int maxNumberTrainingEntries = 200;
+
+	//current number of all training set entries wie currently have
+	int trainingEntriesCount;
 
 	// keep track how many colors we have in each label as trainingsdata
 	int* trainingsSetCount;
@@ -40,4 +196,26 @@ private:
 	// [ [[0,0,0], [0,0,0.2]],  [[1,1,1], [1, 0.9, 0.9]] ]
 	// so for the first label, the second color -> float* color = trainingsSet[0][1]
 	float*** trainingsSet;
+
+	struct NeighbourEntry
+	{
+		float distance;
+		int label;
+
+		NeighbourEntry() : distance(0), label(0)
+		{
+		}
+
+		NeighbourEntry(float distance, int label) : distance(distance), label(label)
+		{
+		}
+
+		friend bool operator< (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return lhs.distance < rhs.distance; }
+		friend bool operator> (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return rhs < lhs; }
+		friend bool operator<= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs > rhs); }
+		friend bool operator>= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs < rhs); }
+
+		friend bool operator== (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return lhs.distance == rhs.distance; }
+		friend bool operator!= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs == rhs); }
+	};
 };
