@@ -18,9 +18,13 @@
     <ClCompile Include="src\RgbLab.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="src\cuda_KNN.cu" />
+    <CudaCompile Include="src\cuda_RgbLab.cu" />
     <CudaCompile Include="src\test.cu" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="header\cuda_KNN.cuh" />
+    <ClInclude Include="header\cuda_MinHeap.cuh" />
     <ClInclude Include="header\cuda_RgbLab.cuh" />
     <ClInclude Include="header\cuda_util.h" />
     <ClInclude Include="header\image.h" />

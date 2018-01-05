@@ -30,6 +30,12 @@
     <ClInclude Include="header\MinHeap.h">
       <Filter>header</Filter>
     </ClInclude>
+    <ClInclude Include="header\cuda_KNN.cuh">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="header\cuda_MinHeap.cuh">
+      <Filter>header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\image.cpp">
@@ -50,6 +56,12 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="src\test.cu">
+      <Filter>src</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\cuda_KNN.cu">
+      <Filter>src</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\cuda_RgbLab.cu">
       <Filter>src</Filter>
     </CudaCompile>
   </ItemGroup>

@@ -1,0 +1,140 @@
+#pragma once
+#include <string>
+#include <crt/host_defines.h>
+
+template<class T, int size>
+class MinHeap {
+
+public:
+	__host__ __device__
+	MinHeap() : elementCount(0)
+	{}
+
+	__host__ __device__
+	bool Insert(T element)
+	{
+		if (elementCount == size)
+		{
+			return false;
+		}
+
+		heap[elementCount] = element;
+		upHeap(elementCount);
+		elementCount++;
+		return true;
+	}
+
+	__host__ __device__
+	bool Insert(T* elements, int n)
+	{
+		if (n > size - elementCount)
+		{
+			return false;
+		}
+
+		bool success = true;
+
+		for (int i = 0; i < n; ++i)
+		{
+			success &= Insert(elements[i]);
+		}
+		return success;
+	}
+	
+	__host__ __device__
+	T Pop()
+	{
+		if (elementCount < 1)
+			//throw "Heap is empty";
+			return T();
+
+		T minElem = heap[0];
+
+		elementCount--;
+		heap[0] = heap[elementCount];
+		downHeap(0);
+
+		return minElem;
+	}
+	
+	__host__ __device__
+	T Peek()
+	{
+		if (elementCount > 0)
+			return heap[0];
+
+		//throw "Heap is empty";
+		return T();
+	}
+
+private:
+	T heap[size];
+	int elementCount;
+
+	__host__ __device__
+	int getParentIndex(int childIndex)
+	{
+		if (childIndex == 0)
+		{
+			return -1;
+		}
+
+		return (childIndex - 1) / 2;
+	}
+
+	__host__ __device__
+	int getLeftChildIndex(int parentIndex)
+	{
+		return parentIndex * 2 + 1;
+	}
+
+	void upHeap(int index)
+	{
+		int parentIndex;
+		T tmp;
+
+		if (index != 0)
+		{
+			parentIndex = getParentIndex(index);
+
+			if (heap[index] < heap[parentIndex])
+			{
+				tmp = heap[index];
+				heap[index] = heap[parentIndex];
+				heap[parentIndex] = tmp;
+				upHeap(parentIndex);
+			}
+		}
+	}
+
+	__host__ __device__
+	void downHeap(int index)
+	{
+		int leftChildIndex = getLeftChildIndex(index);
+
+		if (leftChildIndex >= elementCount)
+		{
+			return;
+		}
+
+		int childIndex;
+		T tmp;
+
+		if (leftChildIndex + 1 >= elementCount)
+		{
+			childIndex = leftChildIndex;
+		}
+		else
+		{
+			childIndex = heap[leftChildIndex] < heap[leftChildIndex + 1] ? leftChildIndex : leftChildIndex + 1;
+		}
+
+		if (heap[childIndex] < heap[index])
+		{
+			tmp = heap[index];
+			heap[index] = heap[childIndex];
+			heap[childIndex] = tmp;
+			downHeap(childIndex);
+		}
+	}
+};
