@@ -58,13 +58,13 @@ public:
 						// update the votes
 						if (weighted)
 						{
-							voteCount[i] += 1.0 / length;
-							voteCount[neighboursEntry[k - 1].label] -= 1.0 / neighboursEntry[k - 1].distance;
+							voteCount[i] += 1.0f / length;
+							voteCount[neighboursEntry[k - 1].label] -= 1.0f / neighboursEntry[k - 1].distance;
 						}
 						else
 						{
-							voteCount[i] += 1.0;
-							voteCount[neighboursEntry[k - 1].label] -= 1.0;
+							voteCount[i] += 1.0f;
+							voteCount[neighboursEntry[k - 1].label] -= 1.0f;
 						}
 
 						// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
@@ -210,12 +210,12 @@ private:
 		{
 		}
 
-		friend bool operator< (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return lhs.distance < rhs.distance; }
-		friend bool operator> (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return rhs < lhs; }
-		friend bool operator<= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs > rhs); }
-		friend bool operator>= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs < rhs); }
+		bool operator< (const NeighbourEntry& rhs) const { return this->distance < rhs.distance; }
+		bool operator> (const NeighbourEntry& rhs) const { return rhs < *this; }
+		bool operator<= ( const NeighbourEntry& rhs) const { return !(*this > rhs); }
+		bool operator>= (const NeighbourEntry& rhs) const { return !(*this < rhs); }
 
-		friend bool operator== (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return lhs.distance == rhs.distance; }
-		friend bool operator!= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs == rhs); }
+		bool operator== (const NeighbourEntry& rhs) const { return this->distance == rhs.distance; }
+		bool operator!= (const NeighbourEntry& rhs) const { return !(*this == rhs); }
 	};
 };

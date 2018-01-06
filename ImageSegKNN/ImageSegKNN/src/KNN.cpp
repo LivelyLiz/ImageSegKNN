@@ -130,11 +130,11 @@ int KNN<labelCount>::DetermineLabelLab(int k, float* data, bool weighted)
 		NeighbourEntry ne = heap.Pop();
 		if (weighted)
 		{
-			voteCount[ne.label] += 1.0 / ne.distance;
+			voteCount[ne.label] += 1.0f / ne.distance;
 		}
 		else
 		{
-			voteCount[ne.label] += 1.0;
+			voteCount[ne.label] += 1.0f;
 		}
 	}
 
@@ -183,11 +183,11 @@ int KNN<labelCount>::DetermineLabelRgb(int k, float* data, bool weighted)
 		NeighbourEntry ne = heap.Pop();
 		if(weighted)
 		{
-			voteCount[ne.label] += 1.0 / ne.distance;
+			voteCount[ne.label] += 1.0f / ne.distance;
 		}
 		else
 		{
-			voteCount[ne.label] += 1.0;
+			voteCount[ne.label] += 1.0f;
 		}
 	}
 

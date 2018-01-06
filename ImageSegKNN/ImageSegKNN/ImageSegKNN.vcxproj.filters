@@ -61,8 +61,5 @@
     <CudaCompile Include="src\cuda_KNN.cu">
       <Filter>src</Filter>
     </CudaCompile>
-    <CudaCompile Include="src\cuda_RgbLab.cu">
-      <Filter>src</Filter>
-    </CudaCompile>
   </ItemGroup>
 </Project>

@@ -7,14 +7,14 @@ template <int labelCount>
 class KNN
 {
 public:
-	__host__ __device__ KNN();
-	__host__ __device__ KNN(float** labelColors);
-	__host__ __device__ KNN(float** labelColors, float*** trainingsSet, int* trainingsSetCount,
+	__host__ KNN();
+	__host__ KNN(float** labelColors);
+	__host__ KNN(float** labelColors, float*** trainingsSet, int* trainingsSetCount,
 		int numColorsPerLabel);
-	__host__ __device__ ~KNN();
+	__host__ ~KNN();
 
-	__host__ __device__ void AddColorToTrainingsset(float* color, int labelID);
-	__host__ __device__ void AddColorsToTrainingsset(float** colors, int labelID, int n);
+	__host__ void AddColorToTrainingsset(float* color, int labelID);
+	__host__ void AddColorsToTrainingsset(float** colors, int labelID, int n);
 
 	__host__ __device__ float* GetLabelColor(int labelID);
 
@@ -211,12 +211,12 @@ private:
 		{
 		}
 
-		__host__ __device__ friend bool operator< (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return lhs.distance < rhs.distance; }
-		__host__ __device__ friend bool operator> (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return rhs < lhs; }
-		__host__ __device__ friend bool operator<= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs > rhs); }
-		__host__ __device__ friend bool operator>= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs < rhs); }
+		__host__ __device__ bool operator< (const NeighbourEntry& rhs) const { return this->distance < rhs.distance; }
+		__host__ __device__ bool operator> (const NeighbourEntry& rhs) const { return rhs < *this; }
+		__host__ __device__ bool operator<= ( const NeighbourEntry& rhs) const { return !(*this > rhs); }
+		__host__ __device__ bool operator>= (const NeighbourEntry& rhs) const { return !(*this < rhs); }
 
-		__host__ __device__ friend bool operator== (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return lhs.distance == rhs.distance; }
-		__host__ __device__ friend bool operator!= (const NeighbourEntry& lhs, const NeighbourEntry& rhs) { return !(lhs == rhs); }
+		__host__ __device__ bool operator== (const NeighbourEntry& rhs) const { return this->distance == rhs.distance; }
+		__host__ __device__ bool operator!= (const NeighbourEntry& rhs) const { return !(*this == rhs); }
 	};
 };*/

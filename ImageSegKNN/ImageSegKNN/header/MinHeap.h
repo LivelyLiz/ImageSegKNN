@@ -18,6 +18,7 @@ public:
 		heap[elementCount] = element;
 		upHeap(elementCount);
 		elementCount++;
+		return true;
 	}
 
 	bool Insert(T* elements, int n)
@@ -33,7 +34,7 @@ public:
 		{
 			success &= Insert(elements[i]);
 		}
-		return false;
+		return success;
 	}
 
 	T Pop()

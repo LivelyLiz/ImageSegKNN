@@ -19,7 +19,6 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="src\cuda_KNN.cu" />
-    <CudaCompile Include="src\cuda_RgbLab.cu" />
     <CudaCompile Include="src\test.cu" />
   </ItemGroup>
   <ItemGroup>
