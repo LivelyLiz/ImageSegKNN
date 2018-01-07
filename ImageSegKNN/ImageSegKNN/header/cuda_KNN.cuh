@@ -1,6 +1,7 @@
-/*// lots and lots of pointers and stuff, we might want to change that? But we need this on cuda device, so it's difficult
+// lots and lots of pointers and stuff, we might want to change that? But we need this on cuda device, so it's difficult
 #pragma once
 #include <crt/host_defines.h>
+#include "header/cuda_RgbLab.cuh"
 
 //number of labels
 template <int labelCount>
@@ -32,13 +33,23 @@ public:
 		NeighbourEntry neighboursEntry[k];
 		float voteCount[labelCount];
 
+		//avoid false results by using at max the amount of trainingsentries
+		int newk = k;
+		if (trainingEntriesCount < newk)
+		{
+			newk = trainingEntriesCount;
+		}
+
+		//initial votes will be removed while the entries get updated
+		voteCount[0] = newk * 1 / 10000;
+
 		// initialize allocated memory;
 		for (int i = 0; i < labelCount; ++i)
 		{
 			voteCount[i] = 0;
 		}
 
-		for (int i = 0; i < k; ++i)
+		for (int i = 0; i < newk; ++i)
 		{
 			neighboursEntry[i] = NeighbourEntry(10000, 0);
 		}
@@ -50,7 +61,7 @@ public:
 			{
 				// get the distance
 				float length = RgbLab::ColorDistance(data, trainingsSet[i][j]);
-				for (int l = 0; l < k; ++l)
+				for (int l = 0; l < newk; ++l)
 				{
 					// if we find something closer than the latest k nearest
 					// update our list
@@ -60,16 +71,16 @@ public:
 						if (weighted)
 						{
 							voteCount[i] += 1.0 / length;
-							voteCount[neighboursEntry[k - 1].label] -= 1.0 / neighboursEntry[k - 1].distance;
+							voteCount[neighboursEntry[newk - 1].label] -= 1.0 / neighboursEntry[newk - 1].distance;
 						}
 						else
 						{
 							voteCount[i] += 1.0;
-							voteCount[neighboursEntry[k - 1].label] -= 1.0;
+							voteCount[neighboursEntry[newk - 1].label] -= 1.0;
 						}
 
 						// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
-						for (int m = k - 2; m > l; --m)
+						for (int m = newk - 2; m > l; --m)
 						{
 							neighboursEntry[m + 1] = neighboursEntry[m];
 						}
@@ -104,13 +115,23 @@ public:
 		NeighbourEntry neighboursEntry[k];
 		float voteCount[labelCount];
 
+		//avoid false results by using at max the amount of trainingsentries
+		int newk = k;
+		if (trainingEntriesCount < newk)
+		{
+			newk = trainingEntriesCount;
+		}
+
+		//initial votes will be removed while the entries get updated
+		voteCount[0] = newk * 1 / 10000;
+
 		// initialize allocated memory;
 		for (int i = 0; i < labelCount; ++i)
 		{
 			voteCount[i] = 0;
 		}
 
-		for (int i = 0; i < k; ++i)
+		for (int i = 0; i < newk; ++i)
 		{
 			neighboursEntry[i] = NeighbourEntry(10000, 0);
 		}
@@ -126,7 +147,7 @@ public:
 
 				// get the distance
 				float length = RgbLab::ColorDistance(datalab, tslab);
-				for (int l = 0; l < k; ++l)
+				for (int l = 0; l < newk; ++l)
 				{
 					// if we find something closer than the latest k nearest
 					// update our list
@@ -136,16 +157,16 @@ public:
 						if (weighted)
 						{
 							voteCount[i] += 1.0 / length;
-							voteCount[neighboursEntry[k - 1].label] -= 1.0 / neighboursEntry[k - 1].distance;
+							voteCount[neighboursEntry[newk - 1].label] -= 1.0 / neighboursEntry[newk - 1].distance;
 						}
 						else
 						{
 							voteCount[i] += 1.0;
-							voteCount[neighboursEntry[k - 1].label] -= 1.0;
+							voteCount[neighboursEntry[newk - 1].label] -= 1.0;
 						}
 
 						// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
-						for (int m = k - 2; m > l; --m)
+						for (int m = newk - 2; m > l; --m)
 						{
 							neighboursEntry[m + 1] = neighboursEntry[m];
 						}
@@ -219,4 +240,4 @@ private:
 		__host__ __device__ bool operator== (const NeighbourEntry& rhs) const { return this->distance == rhs.distance; }
 		__host__ __device__ bool operator!= (const NeighbourEntry& rhs) const { return !(*this == rhs); }
 	};
-};*/
+};

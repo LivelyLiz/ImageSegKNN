@@ -1,4 +1,4 @@
-// lots and lots of pointers and stuff, we might want to change that? But we need this on cuda device, so it's difficult
+/*// lots and lots of pointers and stuff, we might want to change that? But we need this on cuda device, so it's difficult
 #pragma once
 
 //number of labels
@@ -218,4 +218,4 @@ private:
 		bool operator== (const NeighbourEntry& rhs) const { return this->distance == rhs.distance; }
 		bool operator!= (const NeighbourEntry& rhs) const { return !(*this == rhs); }
 	};
-};
+};*/

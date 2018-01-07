@@ -1,6 +1,6 @@
 #pragma once
 #include "header/cuda_RgbLab.cuh"
-#include "header/KNN.h"
+#include "header/cuda_KNN.cuh"
 #include "header/ppma_io.hpp"
 #include <iostream>
 
@@ -78,10 +78,10 @@ void main(){
 	for(int i = 0; i < xsize*ysize; ++i)
 	{
 		float color[3] = { r[0][i] / 255.0f, g[0][i] / 255.0f, b[0][i] / 255.0f };
-		float* labelcolor = knn.GetLabelColor(knn.DetermineLabelRgb(6, &color[0], true));
-		rnew[i] = labelcolor[0] * 255;
-		gnew[i] = labelcolor[1] * 255;
-		bnew[i] = labelcolor[2] * 255;
+		float* labelcolor = knn.GetLabelColor(knn.DetermineLabelRgb<23>( &color[0], true));
+		rnew[i] = (int) (labelcolor[0] * 255);
+		gnew[i] = (int) (labelcolor[1] * 255);
+		bnew[i] = (int) (labelcolor[2] * 255);
 	}
 
 	ppma_write("images/DoctorTestSeg.ppm", xsize, ysize, rnew, gnew, bnew);

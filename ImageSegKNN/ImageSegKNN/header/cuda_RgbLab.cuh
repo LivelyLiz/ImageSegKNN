@@ -15,11 +15,11 @@ public:
 	//Converts a color in sRGB (values [0.0, 1.0]) to the Lab color space (values [0.0, 1.0])
 	__host__ __device__ static Color RgbToLab(float* rgbVal)
 	{
-		float RgbToXyzMatrix[3][3] = { { 0.4360747,  0.3850649,  0.1430804 },
-		{ 0.2225045,  0.7168786,  0.0606169 },
-		{ 0.0139322,  0.0971045,  0.7141733 } };
+		float RgbToXyzMatrix[3][3] = { { 0.4360747f,  0.3850649f,  0.1430804f },
+		{ 0.2225045f,  0.7168786f,  0.0606169f },
+		{ 0.0139322f,  0.0971045f,  0.7141733f } };
 
-		float XyzReferenceWhite[3] = { 0.9642, 1.0000, 0.8251 };
+		float XyzReferenceWhite[3] = { 0.9642f, 1.0000f, 0.8251f };
 
 		Color lab;
 
@@ -41,11 +41,11 @@ public:
 	//Converts a color in Lab color space (values [0.0, 1.0]) to the sRGB (values [0.0, 1.0])
 	__host__ __device__ static Color LabToRgb(float* labVal)
 	{
-		float XyzToRgbMatrix[3][3] = { { 3.1338561, -1.6168667, -0.4906146 },
-		{ -0.9787684,  1.9161415,  0.0334540 },
-		{ 0.0719453, -0.2289914,  1.4052427 } };
+		float XyzToRgbMatrix[3][3] = { { 3.1338561f, -1.6168667f, -0.4906146f },
+		{ -0.9787684f,  1.9161415f,  0.0334540f },
+		{ 0.0719453f, -0.2289914f,  1.4052427f } };
 
-		float XyzReferenceWhite[3] = { 0.9642, 1.0000, 0.8251 };
+		float XyzReferenceWhite[3] = { 0.9642f, 1.0000f, 0.8251f };
 
 		Color rgb;
 
@@ -93,7 +93,7 @@ private:
 
 	__host__ __device__ static float f(float v)
 	{
-		float delta = 6. / 29.;
+		float delta = 6.0f / 29.0f;
 
 		if (v > delta * delta * delta)
 		{
@@ -107,7 +107,7 @@ private:
 
 	__host__ __device__ static float finv(float v)
 	{
-		float delta = 6. / 29.;
+		float delta = 6.0f / 29.0f;
 
 		if (v > delta)
 		{

@@ -1,4 +1,4 @@
-#pragma once
+/*#pragma once
 #include "header/KNN.h"
 #include <cstdlib>
 #include "header/cuda_RgbLab.cuh"
@@ -210,7 +210,7 @@ int KNN<labelCount>::DetermineLabelRgb(int k, float* data, bool weighted)
 template<int labelCount>
 void KNN<labelCount>::AddColorToTrainingsset(float* color, int labelID)
 {
-	if(labelID > labelCount-1)
+	if(labelID > labelCount-1 || trainingEntriesCount == maxNumberTrainingEntries)
 	{
 		return;
 	}
@@ -245,6 +245,11 @@ void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n
 		return;
 	}
 
+	if(trainingEntriesCount + n > maxNumberTrainingEntries)
+	{
+		n = maxNumberTrainingEntries - trainingEntriesCount;
+	}
+
 	int newColorPerLabelCount = numColorsPerLabel;
 
 	while(trainingsSetCount[labelID] + n > newColorPerLabelCount)
@@ -272,7 +277,7 @@ void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n
 
 	for(int i = 0; i < n; ++i)
 	{
-		trainingsSet[labelID][trainingsSetCount[labelID]] = colors[n];
+		trainingsSet[labelID][trainingsSetCount[labelID]] = colors[i];
 		trainingsSetCount[labelID]++;
 	}
 }
@@ -286,3 +291,4 @@ template class KNN<6>;
 template class KNN<7>;
 template class KNN<8>;
 template class KNN<9>;
+*/

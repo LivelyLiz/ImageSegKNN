@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <crt/host_defines.h>
+#include <driver_types.h>
 
 template<class T, int size>
 class MinHeap {
@@ -45,8 +46,14 @@ public:
 	T Pop()
 	{
 		if (elementCount < 1)
-			//throw "Heap is empty";
+		{
+#ifdef __CUDA_ARCH__
 			return T();
+#else
+			throw "Heap is empty";
+
+#endif	
+		}
 
 		T minElem = heap[0];
 
@@ -63,8 +70,12 @@ public:
 		if (elementCount > 0)
 			return heap[0];
 
-		//throw "Heap is empty";
+#ifdef __CUDA_ARCH__
 		return T();
+#else
+		throw "Heap is empty";
+
+#endif	
 	}
 
 private:
@@ -88,12 +99,13 @@ private:
 		return parentIndex * 2 + 1;
 	}
 
+	__host__ __device__
 	void upHeap(int index)
 	{
 		int parentIndex;
 		T tmp;
 
-		if (index != 0)
+		if (index > 0)
 		{
 			parentIndex = getParentIndex(index);
 

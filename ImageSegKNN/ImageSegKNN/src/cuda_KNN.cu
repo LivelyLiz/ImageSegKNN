@@ -1,4 +1,4 @@
-/*#pragma once
+#pragma once
 #include "header/cuda_KNN.cuh"
 #include <cstdlib>
 #include "header/cuda_RgbLab.cuh"
@@ -125,16 +125,23 @@ int KNN<labelCount>::DetermineLabelLab(int k, float* data, bool weighted)
 		voteCount[i] = 0;
 	}
 
-	for (int i = 0; i < k; ++i)
+	//avoid false results by using at max the amount of trainingsentries
+	int newk = k;
+	if (trainingEntriesCount < newk)
+	{
+		newk = trainingEntriesCount;
+	}
+
+	for (int i = 0; i < newk; ++i)
 	{
 		NeighbourEntry ne = heap.Pop();
 		if (weighted)
 		{
-			voteCount[ne.label] += 1.0 / ne.distance;
+			voteCount[ne.label] += 1.0f / ne.distance;
 		}
 		else
 		{
-			voteCount[ne.label] += 1.0;
+			voteCount[ne.label] += 1.0f;
 		}
 	}
 
@@ -178,16 +185,23 @@ int KNN<labelCount>::DetermineLabelRgb(int k, float* data, bool weighted)
 		voteCount[i] = 0;
 	}
 
-	for (int i = 0; i < k; ++i)
+	//avoid false results by using at max the amount of trainingsentries
+	int newk = k;
+	if (trainingEntriesCount < newk)
+	{
+		newk = trainingEntriesCount;
+	}
+
+	for (int i = 0; i < newk; ++i)
 	{
 		NeighbourEntry ne = heap.Pop();
 		if (weighted)
 		{
-			voteCount[ne.label] += 1.0 / ne.distance;
+			voteCount[ne.label] += 1.0f / ne.distance;
 		}
 		else
 		{
-			voteCount[ne.label] += 1.0;
+			voteCount[ne.label] += 1.0f;
 		}
 	}
 
@@ -210,7 +224,7 @@ int KNN<labelCount>::DetermineLabelRgb(int k, float* data, bool weighted)
 template<int labelCount>
 void KNN<labelCount>::AddColorToTrainingsset(float* color, int labelID)
 {
-	if (labelID > labelCount - 1)
+	if (labelID > labelCount - 1 || trainingEntriesCount == maxNumberTrainingEntries)
 	{
 		return;
 	}
@@ -245,6 +259,11 @@ void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n
 		return;
 	}
 
+	if (trainingEntriesCount + n > maxNumberTrainingEntries)
+	{
+		n = maxNumberTrainingEntries - trainingEntriesCount;
+	}
+
 	int newColorPerLabelCount = numColorsPerLabel;
 
 	while (trainingsSetCount[labelID] + n > newColorPerLabelCount)
@@ -272,7 +291,7 @@ void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n
 
 	for (int i = 0; i < n; ++i)
 	{
-		trainingsSet[labelID][trainingsSetCount[labelID]] = colors[n];
+		trainingsSet[labelID][trainingsSetCount[labelID]] = colors[i];
 		trainingsSetCount[labelID]++;
 	}
 }
@@ -286,4 +305,3 @@ template class KNN<6>;
 template class KNN<7>;
 template class KNN<8>;
 template class KNN<9>;
-*/
