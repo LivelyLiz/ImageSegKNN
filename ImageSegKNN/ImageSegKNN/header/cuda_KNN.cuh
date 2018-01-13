@@ -3,14 +3,36 @@
 #include <crt/host_defines.h>
 #include "header/cuda_RgbLab.cuh"
 
+struct NeighbourEntry
+{
+	float distance;
+	int label;
+
+	__host__ __device__ NeighbourEntry() : distance(0), label(0)
+	{
+	}
+
+	__host__ __device__ NeighbourEntry(float distance, int label) : distance(distance), label(label)
+	{
+	}
+
+	__host__ __device__ bool operator< (const NeighbourEntry& rhs) const { return this->distance < rhs.distance; }
+	__host__ __device__ bool operator> (const NeighbourEntry& rhs) const { return rhs < *this; }
+	__host__ __device__ bool operator<= (const NeighbourEntry& rhs) const { return !(*this > rhs); }
+	__host__ __device__ bool operator>= (const NeighbourEntry& rhs) const { return !(*this < rhs); }
+
+	__host__ __device__ bool operator== (const NeighbourEntry& rhs) const { return this->distance == rhs.distance; }
+	__host__ __device__ bool operator!= (const NeighbourEntry& rhs) const { return !(*this == rhs); }
+};
+
 //number of labels
 template <int labelCount>
 class KNN
 {
 public:
 	__host__ KNN();
-	__host__ KNN(float** labelColors);
-	__host__ KNN(float** labelColors, float*** trainingsSet, int* trainingsSetCount,
+	__host__ KNN(float* labelColors);
+	__host__ KNN(float* labelColors, float* trainingsSet, int* trainingsSetCount,
 		int numColorsPerLabel);
 	__host__ ~KNN();
 
@@ -26,7 +48,7 @@ public:
 	// using a non type template function enables compile time optimization
 	// and it is also possible to allocate memory on the stack instead of heap
 	// in CUDA this means it is at least possible to have the arrays in the registers
-	// instead of global memory -> performance improvement!!
+	// instead of global memory -> performance improvement (maybe)!!
 	template <int k>
 	__host__ __device__ int DetermineLabelRgb(float* data, bool weighted)
 	{
@@ -40,14 +62,14 @@ public:
 			newk = trainingEntriesCount;
 		}
 
-		//initial votes will be removed while the entries get updated
-		voteCount[0] = newk * 1 / 10000;
-
 		// initialize allocated memory;
 		for (int i = 0; i < labelCount; ++i)
 		{
 			voteCount[i] = 0;
 		}
+
+		//initial votes will be removed while the entries get updated
+		voteCount[0] = newk * 1 / 10000;
 
 		for (int i = 0; i < newk; ++i)
 		{
@@ -60,7 +82,7 @@ public:
 			for (int j = 0; j < trainingsSetCount[i]; ++j)
 			{
 				// get the distance
-				float length = RgbLab::ColorDistance(data, trainingsSet[i][j]);
+				float length = RgbLab::ColorDistance(data, getColorInTrainingsset(i, j));
 				for (int l = 0; l < newk; ++l)
 				{
 					// if we find something closer than the latest k nearest
@@ -70,7 +92,7 @@ public:
 						// update the votes
 						if (weighted)
 						{
-							voteCount[i] += 1.0 / length;
+							voteCount[i] += 1.0 / (length + 0.0000001);
 							voteCount[neighboursEntry[newk - 1].label] -= 1.0 / neighboursEntry[newk - 1].distance;
 						}
 						else
@@ -85,7 +107,7 @@ public:
 							neighboursEntry[m + 1] = neighboursEntry[m];
 						}
 
-						neighboursEntry[l] = NeighbourEntry(length, i);
+						neighboursEntry[l] = NeighbourEntry((length + 0.0000001), i);
 
 						break;
 					}
@@ -143,7 +165,7 @@ public:
 		{
 			for (int j = 0; j < trainingsSetCount[i]; ++j)
 			{
-				float* tslab = &RgbLab::RgbToLab(trainingsSet[i][j]).color[0];
+				float* tslab = &RgbLab::RgbToLab(getColorInTrainingsset(i, j)).color[0];
 
 				// get the distance
 				float length = RgbLab::ColorDistance(datalab, tslab);
@@ -156,7 +178,7 @@ public:
 						// update the votes
 						if (weighted)
 						{
-							voteCount[i] += 1.0 / length;
+							voteCount[i] += 1.0 / (length+0.0000001);
 							voteCount[neighboursEntry[newk - 1].label] -= 1.0 / neighboursEntry[newk - 1].distance;
 						}
 						else
@@ -171,7 +193,7 @@ public:
 							neighboursEntry[m + 1] = neighboursEntry[m];
 						}
 
-						neighboursEntry[l] = NeighbourEntry(length, i);
+						neighboursEntry[l] = NeighbourEntry((length + 0.0000001), i);
 
 						break;
 					}
@@ -195,9 +217,49 @@ public:
 		return winningLabel;
 	}
 
+	__host__ __device__ float* GetLabelColors()
+	{
+		return labelColors;
+	}
+
+	__host__ __device__ float* GetTrainingsSet()
+	{
+		return trainingsSet;
+	}
+
+	__host__ __device__ int* GetTrainingsSetCount()
+	{
+		return trainingsSetCount;
+	}
+
+	__host__ __device__ int GetNumColorsPerLabel()
+	{
+		return numColorsPerLabel;
+	}
+
+	int GetSizeOfLabelColors()
+	{
+		return sizeof(float) * labelCount * 3;
+	}
+
+	int GetSizeOfTrainingsset()
+	{
+		return sizeof(float) * labelCount * numColorsPerLabel * 3;
+	}
+
+	int GetSizeOfTrainingsSetCount()
+	{
+		return  sizeof(int) * labelCount;
+	}
+
+	int GetNumTrainingsEntries()
+	{
+		return trainingEntriesCount;
+	}
+
 private:
 	// color which each label will be assigned to
-	float** labelColors;
+	float* labelColors;
 
 	//max number of training set entries we can have
 	static const int maxNumberTrainingEntries = 200;
@@ -217,27 +279,33 @@ private:
 	// example with 2 labels
 	// [ [[0,0,0], [0,0,0.2]],  [[1,1,1], [1, 0.9, 0.9]] ]
 	// so for the first label, the second color -> float* color = trainingsSet[0][1]
-	float*** trainingsSet;
+	float* trainingsSet;
 
-	struct NeighbourEntry
+	float* getColorInTrainingsset(int label, int index)
 	{
-		float distance;
-		int label;
+		return &trainingsSet[label * numColorsPerLabel * 3 + index * 3];
+	}
 
-		__host__ __device__ NeighbourEntry() : distance(0), label(0)
+	int getIndexInTrainingssset(int label, int index)
+	{
+		return label * numColorsPerLabel * 3 + index * 3;
+	}
+
+	void assignColorToTrainingsset(float* color, int label, int index)
+	{
+		int i = getIndexInTrainingssset(label, index);
+		for(int j = 0; j < 3; ++j)
 		{
+			trainingsSet[i + j] = color[j];
 		}
+	}
 
-		__host__ __device__ NeighbourEntry(float distance, int label) : distance(distance), label(label)
+	void assignColorToLabel(float* color, int label)
+	{
+		int i = label * 3;
+		for (int j = 0; j < 3; ++j)
 		{
+			labelColors[i + j] = color[j];
 		}
-
-		__host__ __device__ bool operator< (const NeighbourEntry& rhs) const { return this->distance < rhs.distance; }
-		__host__ __device__ bool operator> (const NeighbourEntry& rhs) const { return rhs < *this; }
-		__host__ __device__ bool operator<= ( const NeighbourEntry& rhs) const { return !(*this > rhs); }
-		__host__ __device__ bool operator>= (const NeighbourEntry& rhs) const { return !(*this < rhs); }
-
-		__host__ __device__ bool operator== (const NeighbourEntry& rhs) const { return this->distance == rhs.distance; }
-		__host__ __device__ bool operator!= (const NeighbourEntry& rhs) const { return !(*this == rhs); }
-	};
+	}
 };

@@ -64,6 +64,7 @@ public:
 		return rgb;
 	}
 
+	// compute distance of 2 colors via euclidian vector norm
 	__host__ __device__ static float ColorDistance(float* a, float* b, int n = 3)
 	{
 		float distance = 0;
@@ -79,6 +80,7 @@ public:
 		return distance;
 	}
 
+	// returns a color given as rgb int [0, 255] into rgb float [0,1]
 	__host__ static float* MakeColor(int r, int g, int b)
 	{
 		float* c = (float*) malloc(sizeof(float) * 3);
@@ -90,6 +92,8 @@ public:
 	}
 
 private:
+
+	//functions used in color conversion
 
 	__host__ __device__ static float f(float v)
 	{

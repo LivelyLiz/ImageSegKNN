@@ -12,11 +12,7 @@ KNN<2>::KNN() : trainingEntriesCount(2), numColorsPerLabel(8)
 	int labelCount = 2;
 
 	//not sure about this pointer stuff here
-	trainingsSet = (float***)std::malloc(sizeof(float**) * labelCount);
-	for (int i = 0; i < labelCount; ++i)
-	{
-		trainingsSet[i] = (float**)malloc(sizeof(float*) * numColorsPerLabel);
-	}
+	trainingsSet = (float*)std::malloc(sizeof(float) * labelCount * numColorsPerLabel * 3);
 
 	trainingsSetCount = (int*)std::malloc(sizeof(int) * 2);
 	trainingsSetCount[0] = 1;
@@ -38,30 +34,30 @@ KNN<2>::KNN() : trainingEntriesCount(2), numColorsPerLabel(8)
 	blue[2] = 1.0;
 	red[0] = 1.0;
 
-	trainingsSet[0][0] = &white[0];
-	trainingsSet[1][0] = &black[0];
+	assignColorToTrainingsset(&white[0], 0, 0);
+	assignColorToTrainingsset(&black[0], 1, 0);
 
-	labelColors = (float**)malloc(sizeof(float) * labelCount * 3);
-	labelColors[0] = &blue[0];
-	labelColors[1] = &red[0];
+	labelColors = (float*)malloc(sizeof(float) * labelCount * 3);
+	assignColorToLabel(&blue[0], 0);
+	assignColorToLabel(&red[0], 1);
 }
 
 template <int labelCount>
-KNN<labelCount>::KNN(float** labelColors) : labelColors(labelColors), trainingEntriesCount(0)
+KNN<labelCount>::KNN(float* labelColors) : labelColors(labelColors), trainingEntriesCount(0)
 {
 	trainingsSetCount = (int*)std::malloc(sizeof(float) * labelCount);
+	for(int i = 0; i < labelCount; ++i)
+	{
+		trainingsSetCount[i] = 0;
+	}
 
 	numColorsPerLabel = 16;
 
-	trainingsSet = (float***)std::malloc(sizeof(float) * labelCount * numColorsPerLabel * 3);
-	for (int i = 0; i < labelCount; ++i)
-	{
-		trainingsSet[i] = (float**)malloc(sizeof(float*) * numColorsPerLabel);
-	}
+	trainingsSet = (float*)std::malloc(sizeof(float) * labelCount * numColorsPerLabel * 3);
 }
 
 template <int labelCount>
-KNN<labelCount>::KNN(float** labelColors, float*** ts, int* trainingsSetCount, int maxColorsInLabel) : labelColors(labelColors), trainingsSet(ts),
+KNN<labelCount>::KNN(float* labelColors, float* ts, int* trainingsSetCount, int maxColorsInLabel) : labelColors(labelColors), trainingsSet(ts),
 trainingsSetCount(trainingsSetCount), numColorsPerLabel(maxColorsInLabel), trainingEntriesCount(0)
 {
 	for (int i = 0; i < labelCount; ++i)
@@ -73,16 +69,6 @@ trainingsSetCount(trainingsSetCount), numColorsPerLabel(maxColorsInLabel), train
 template <int labelCount>
 KNN<labelCount>::~KNN()
 {
-	for (int i = 0; i < labelCount; ++i)
-	{
-		free(labelColors[i]);
-		for (int j = 0; j < trainingsSetCount[i]; ++j)
-		{
-			free(trainingsSet[i][j]);
-		}
-		free(trainingsSet[i]);
-	}
-
 	free(trainingsSet);
 	free(trainingsSetCount);
 	free(labelColors);
@@ -93,7 +79,7 @@ float* KNN<labelCount>::GetLabelColor(int labelID)
 {
 	if (labelID < labelCount)
 	{
-		return labelColors[labelID];
+		return &labelColors[labelID*3];
 	}
 	return nullptr;
 }
@@ -110,7 +96,7 @@ int KNN<labelCount>::DetermineLabelLab(int k, float* data, bool weighted)
 	{
 		for (int j = 0; j < trainingsSetCount[i]; ++j)
 		{
-			float* tslab = &RgbLab::RgbToLab(trainingsSet[i][j]).color[0];
+			float* tslab = &RgbLab::RgbToLab(getColorInTrainingsset(i, j)).color[0];
 
 			// get the distance
 			float length = RgbLab::ColorDistance(datalab, tslab);
@@ -137,14 +123,14 @@ int KNN<labelCount>::DetermineLabelLab(int k, float* data, bool weighted)
 		NeighbourEntry ne = heap.Pop();
 		if (weighted)
 		{
-			voteCount[ne.label] += 1.0f / ne.distance;
+			voteCount[ne.label] += 1.0f / (ne.distance + 0.0000001);
 		}
 		else
 		{
 			voteCount[ne.label] += 1.0f;
 		}
 	}
-
+	
 	// determine the right label based on votes
 	float maxVote = 0;
 	int winningLabel = 0;
@@ -173,7 +159,7 @@ int KNN<labelCount>::DetermineLabelRgb(int k, float* data, bool weighted)
 		for (int j = 0; j < trainingsSetCount[i]; ++j)
 		{
 			// get the distance
-			float length = RgbLab::ColorDistance(data, trainingsSet[i][j]);
+			float length = RgbLab::ColorDistance(data, getColorInTrainingsset(i, j));
 
 			heap.Insert(NeighbourEntry(length, i));
 		}
@@ -197,7 +183,7 @@ int KNN<labelCount>::DetermineLabelRgb(int k, float* data, bool weighted)
 		NeighbourEntry ne = heap.Pop();
 		if (weighted)
 		{
-			voteCount[ne.label] += 1.0f / ne.distance;
+			voteCount[ne.label] += 1.0f / (ne.distance + 0.0000001);
 		}
 		else
 		{
@@ -232,29 +218,28 @@ void KNN<labelCount>::AddColorToTrainingsset(float* color, int labelID)
 	if (trainingsSetCount[labelID] == numColorsPerLabel)
 	{
 		numColorsPerLabel *= 2;
-		float*** newTrainingsSet = (float***)std::malloc(sizeof(float**) * labelCount);
+		float* newTrainingsSet = (float*)std::malloc(sizeof(float) * labelCount * numColorsPerLabel * 3);
 		for (int i = 0; i < labelCount; ++i)
 		{
-			newTrainingsSet[i] = (float**)malloc(sizeof(float*) * numColorsPerLabel);
 			for (int j = 0; j < trainingsSetCount[i]; ++j)
 			{
-				newTrainingsSet[i][j] = trainingsSet[i][j];
+				newTrainingsSet[getIndexInTrainingssset(i,j)] = trainingsSet[i * numColorsPerLabel/2 * 3 + j * 3];
 			}
-			free(trainingsSet[i]);
 		}
 		free(trainingsSet);
 
 		trainingsSet = newTrainingsSet;
 	}
 
-	trainingsSet[labelID][trainingsSetCount[labelID]] = color;
+	assignColorToTrainingsset(color, labelID, trainingsSetCount[labelID]);
 	trainingsSetCount[labelID]++;
+	trainingEntriesCount++;
 }
 
 template<int labelCount>
 void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n)
 {
-	if (labelID > labelCount - 1)
+	if (labelID > labelCount - 1 || trainingEntriesCount == maxNumberTrainingEntries)
 	{
 		return;
 	}
@@ -273,26 +258,25 @@ void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n
 
 	if (newColorPerLabelCount > numColorsPerLabel)
 	{
-		numColorsPerLabel *= newColorPerLabelCount;
-		float*** newTrainingsSet = (float***)std::malloc(sizeof(float**) * labelCount);
+		
+		float* newTrainingsSet = (float*)std::malloc(sizeof(float) * labelCount * newColorPerLabelCount * 3);
 		for (int i = 0; i < labelCount; ++i)
 		{
-			newTrainingsSet[i] = (float**)malloc(sizeof(float*) * numColorsPerLabel);
 			for (int j = 0; j < trainingsSetCount[i]; ++j)
 			{
-				newTrainingsSet[i][j] = trainingsSet[i][j];
+				newTrainingsSet[i * newColorPerLabelCount / 2 * 3 + j * 3] = trainingsSet[getIndexInTrainingssset(i, j)];
 			}
-			free(trainingsSet[i]);
 		}
-
+		numColorsPerLabel = newColorPerLabelCount;
 		free(trainingsSet);
 		trainingsSet = newTrainingsSet;
 	}
 
 	for (int i = 0; i < n; ++i)
 	{
-		trainingsSet[labelID][trainingsSetCount[labelID]] = colors[i];
+		assignColorToTrainingsset(colors[i], labelID, trainingsSetCount[labelID]);
 		trainingsSetCount[labelID]++;
+		trainingEntriesCount++;
 	}
 }
 

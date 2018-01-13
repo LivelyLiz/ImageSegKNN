@@ -20,6 +20,8 @@
 
 // includes, system
 #include <iostream>
+#include <driver_types.h>
+#include <cuda_runtime_api.h>
 
 
 template< typename T >

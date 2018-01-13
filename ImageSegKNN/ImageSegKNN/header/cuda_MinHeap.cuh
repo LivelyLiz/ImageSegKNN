@@ -42,6 +42,7 @@ public:
 		return success;
 	}
 	
+	// remove and return root element
 	__host__ __device__
 	T Pop()
 	{
@@ -64,6 +65,7 @@ public:
 		return minElem;
 	}
 	
+	// return root element
 	__host__ __device__
 	T Peek()
 	{
@@ -99,6 +101,7 @@ private:
 		return parentIndex * 2 + 1;
 	}
 
+	// let new element float up to find position in heap
 	__host__ __device__
 	void upHeap(int index)
 	{
@@ -119,6 +122,7 @@ private:
 		}
 	}
 
+	// let element sink down to find right position
 	__host__ __device__
 	void downHeap(int index)
 	{
