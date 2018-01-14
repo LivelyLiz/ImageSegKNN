@@ -59,7 +59,9 @@ __device__ int getIndexInTrainingssset(int label, int index, int numColorsPerLab
 	return label * numColorsPerLabel * 3 + index * 3;
 }
 
-__global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount, float* labelColors, float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel, int numTrainingsEntries) {
+__global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount, 
+	float* labelColors, float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel, 
+		int numTrainingsEntries, NeighbourEntry* neighbour_entry, float* voteCount) {
 
 	int gtid = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -68,12 +70,11 @@ __global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount,
 		return;
 	}
 
-	NeighbourEntry* neighbour_entry = (NeighbourEntry*) malloc(sizeof(NeighbourEntry) * k);
 	for(int i = 0; i < k; ++i)
 	{
-		neighbour_entry[i] = NeighbourEntry(10000, 0);
+		neighbour_entry[gtid * k + i] = NeighbourEntry(10000, 0);
 	}
-	
+
 	//avoid false results by using at max the amount of trainingsentries
 	int newk = k;
 	if (numTrainingsEntries < newk)
@@ -81,12 +82,11 @@ __global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount,
 		newk = numTrainingsEntries;
 	}
 
-	float* voteCount = (float*) malloc(sizeof(float) * labelCount);
 	for(int i = 0; i < labelCount; ++i)
 	{
-		voteCount[i] = 0;
+		voteCount[gtid * labelCount + i] = 0;
 	}
-	voteCount[0] = 1.0f / 10000.0f * newk;
+	voteCount[gtid * labelCount] = 1.0f / 10000.0f * newk;
 
 	for(int i = 0; i < labelCount; ++i)
 	{
@@ -94,23 +94,24 @@ __global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount,
 		{
 			// get the distance
 			float length = RgbLab::ColorDistance(&picturedata[gtid*3], &trainingsSet[getIndexInTrainingssset(i, j, numColorsPerlabel)]);
+			
 			for (int l = 0; l < newk; ++l)
 			{
 				// if we find something closer than the latest k nearest
 				// update our list
-				if (length < neighbour_entry[l].distance)
+				if (length < neighbour_entry[gtid * k + l].distance)
 				{
 					// update the votes
-					voteCount[i] += 1.0 / (length + 0.0000001);
-					voteCount[neighbour_entry[newk - 1].label] -= 1.0 / neighbour_entry[newk - 1].distance;
+					voteCount[gtid * labelCount + i] += 1.0 / (length + 0.0000001);
+					voteCount[gtid * labelCount + neighbour_entry[gtid * k + newk - 1].label] -= 1.0 / neighbour_entry[gtid * k + newk - 1].distance;
 
 					// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
 					for (int m = newk - 2; m > l; --m)
 					{
-						neighbour_entry[m + 1] = neighbour_entry[m];
+						neighbour_entry[gtid * k + m + 1] = neighbour_entry[gtid * k + m];
 					}
 
-					neighbour_entry[l] = NeighbourEntry((length + 0.0000001), i);
+					neighbour_entry[gtid * k + l] = NeighbourEntry((length + 0.0000001), i);
 
 					break;
 				}
@@ -124,9 +125,9 @@ __global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount,
 
 	for (int i = 0; i < labelCount; ++i)
 	{
-		if (maxVote < voteCount[i])
+		if (maxVote < voteCount[gtid * labelCount + i])
 		{
-			maxVote = voteCount[i];
+			maxVote = voteCount[gtid * labelCount + i];
 			winningLabel = i;
 		}
 	}
@@ -135,9 +136,6 @@ __global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount,
 	{
 		picturedata[gtid * 3 + i] = labelColors[winningLabel * 3 + i];
 	}
-
-	free(voteCount);
-	free(neighbour_entry);
 }
 
 void main()
@@ -154,22 +152,27 @@ void main()
 	cudaDeviceProp props;
 	cudaGetDeviceProperties(&props, 0);
 
+	//specify image
 	std::string file = "images/MirrorsEdgeTest.ppm";
 	int xsize = 0;
 	int ysize = 0;
 	int maxrgb = 0;
 
-	const int labelcount = 3;
-	KNN<labelcount> knn = *MirrorTestKNN();
-
 	int* r;
 	int* g;
 	int* b;
 
+	//make a knn instance to use its data on device
+	const int labelcount = 3;
+	KNN<labelcount> knn = *MirrorTestKNN();
+
+	//read in image
 	ppma_read(file, xsize, ysize, maxrgb, &r, &g, &b);
 
+	//compute number of pixels from read image
 	int numPixels = xsize * ysize;
 
+	//make 3 seperate arrays of r, g, b to one with [r, g, b, r, g, b,...]
 	float* host_picturedata = (float*)malloc(sizeof(float) * numPixels * 3);
 	for(int i = 0; i < numPixels; ++i)
 	{
@@ -178,8 +181,10 @@ void main()
 		host_picturedata[3*i + 2] = b[i] / 255.0f;
 	}
 
+	//allocate memory for result
 	float* res = (float*)malloc(sizeof(float) * numPixels * 3);
 
+	//allocate device memory
 	float* device_picturedata;
 	checkErrorsCuda(cudaMalloc((void**)&device_picturedata, sizeof(float) * numPixels * 3));
 	checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
@@ -192,7 +197,7 @@ void main()
 	int* device_trainingsEntryCount;
 	checkErrorsCuda(cudaMalloc((void**)&device_trainingsEntryCount, knn.GetSizeOfTrainingsSetCount()));
 	checkErrorsCuda(cudaMemcpy(device_trainingsEntryCount, knn.GetTrainingsSetCount(), knn.GetSizeOfTrainingsSetCount(), cudaMemcpyHostToDevice));
-
+	
 	// determine thread layout
 	const int max_threads_per_block = props.maxThreadsPerBlock;
 	int num_blocks = (numPixels) / max_threads_per_block;
@@ -202,15 +207,26 @@ void main()
 	}
 	int num_threads_per_block = std::min(numPixels, max_threads_per_block);
 
-	int k = 5;
-	KNNRgb << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, k, labelcount, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
-	
+	int k = 1;
+
+	//allocate meomory to work on
+	NeighbourEntry* device_neighbourentry;
+	checkErrorsCuda(cudaMalloc((void**)&device_neighbourentry, sizeof(NeighbourEntry) * k * numPixels));
+	float* device_votecount;
+	checkErrorsCuda(cudaMalloc((void**)&device_votecount, sizeof(float) * labelcount * numPixels));
+
+	//***********run kernel*********************
+	KNNRgb << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, k, labelcount, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries(), device_neighbourentry, device_votecount);
+	//******************************************
+
+	//wait for kernel to finish
 	checkErrorsCuda(cudaDeviceSynchronize());
 	checkLastCudaError("kernel execution failed");
 
+	//get data from device
 	checkErrorsCuda(cudaMemcpy(res, device_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyDeviceToHost));
-	//cudaDeviceSynchronize();
 
+	// write data back to 3 intarrays, so it can be written to a file by ppma class
 	for (int i = 0; i < numPixels; ++i)
 	{
 		r[i] = (int) (res[3*i] * 255);
@@ -222,13 +238,17 @@ void main()
 
 	printf("ready");
 
+	//free host memory
 	free(r);
 	free(g);
 	free(b);
 	free(host_picturedata);
 
+	//free device memory
 	cudaFree(device_picturedata);
 	cudaFree(device_labelColors);
 	cudaFree(device_trainingsEntryCount);
 	cudaFree(device_trainingsSet);
+	cudaFree(device_neighbourentry);
+	cudaFree(device_votecount);
 }
