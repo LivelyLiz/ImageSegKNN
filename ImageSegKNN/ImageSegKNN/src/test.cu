@@ -6,6 +6,7 @@
 #include "header/cuda_MinHeap.cuh"
 #include "header/ppma_io.hpp"
 #include <algorithm>
+#include <chrono>
 
 // to compile a header into this main, you have to set 
 //Configuration Properties -> CUDA C/C++ -> Common -> Generate Relocatable Device Code -> Yes (-rdc=true)
@@ -59,7 +60,7 @@ __device__ int getIndexInTrainingssset(int label, int index, int numColorsPerLab
 	return label * numColorsPerLabel * 3 + index * 3;
 }
 
-__global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount, 
+__global__ void naiveKNNRgb(float* picturedata, int numPixels, int k, int labelCount, 
 	float* labelColors, float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel, 
 		int numTrainingsEntries, NeighbourEntry* neighbour_entry, float* voteCount) {
 
@@ -138,6 +139,87 @@ __global__ void KNNRgb(float* picturedata, int numPixels, int k, int labelCount,
 	}
 }
 
+template<int k, int labelCount>
+__global__ void templateparamsKNNRgb(float* picturedata, int numPixels,
+	float* labelColors, float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel,
+	int numTrainingsEntries) {
+
+	int gtid = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if (gtid >= numPixels)
+	{
+		return;
+	}
+	
+	NeighbourEntry neighbour_entry[k];
+	float voteCount[labelCount];
+
+	for (int i = 0; i < k; ++i)
+	{
+		neighbour_entry[i] = NeighbourEntry(10000, 0);
+	}
+
+	//avoid false results by using at max the amount of trainingsentries
+	int newk = k;
+	if (numTrainingsEntries < newk)
+	{
+		newk = numTrainingsEntries;
+	}
+
+	for (int i = 0; i < labelCount; ++i)
+	{
+		voteCount[i] = 0;
+	}
+	voteCount[0] = 1.0f / 10000.0f * newk;
+
+	for (int i = 0; i < labelCount; ++i)
+	{
+		for (int j = 0; j < trainingsEntryCount[i]; ++j)
+		{
+			// get the distance
+			float length = RgbLab::ColorDistance(&picturedata[gtid * 3], &trainingsSet[getIndexInTrainingssset(i, j, numColorsPerlabel)]);
+
+			for (int l = 0; l < newk; ++l)
+			{
+				// if we find something closer than the latest k nearest
+				// update our list
+				if (length < neighbour_entry[l].distance)
+				{
+					// update the votes
+					voteCount[i] += 1.0 / (length + 0.0000001);
+					voteCount[neighbour_entry[newk - 1].label] -= 1.0 / neighbour_entry[newk - 1].distance;
+					
+					// therefore we have to insert the new and push the ones behind it one index further (aka copy them)
+					for (int m = newk - 2; m > l; --m)
+					{
+						neighbour_entry[m + 1] = neighbour_entry[m];
+					}
+					neighbour_entry[l] = NeighbourEntry((length + 0.0000001), i);
+					break;
+				}
+			}
+		}
+	}
+
+	// determine the right label based on votes
+	float maxVote = 0;
+	int winningLabel = 0;
+
+	for (int i = 0; i < labelCount; ++i)
+	{
+		if (maxVote < voteCount[i])
+		{
+			maxVote = voteCount[i];
+			winningLabel = i;
+		}
+	}
+
+	for (int i = 0; i < 3; ++i)
+	{
+		picturedata[gtid * 3 + i] = labelColors[winningLabel * 3 + i];
+	}
+}
+
 void main()
 {
 	// get number of CUDA devices
@@ -207,7 +289,7 @@ void main()
 	}
 	int num_threads_per_block = std::min(numPixels, max_threads_per_block);
 
-	int k = 1;
+	const int k = 5;
 
 	//allocate meomory to work on
 	NeighbourEntry* device_neighbourentry;
@@ -215,12 +297,25 @@ void main()
 	float* device_votecount;
 	checkErrorsCuda(cudaMalloc((void**)&device_votecount, sizeof(float) * labelcount * numPixels));
 
-	//***********run kernel*********************
-	KNNRgb << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, k, labelcount, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries(), device_neighbourentry, device_votecount);
+	//***********run naive kernel***************
+	auto timenaivestart = std::chrono::high_resolution_clock::now();
+	naiveKNNRgb << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, k, labelcount, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries(), device_neighbourentry, device_votecount);
+	checkErrorsCuda(cudaDeviceSynchronize());
+	auto timenaiveend = std::chrono::high_resolution_clock::now();
 	//******************************************
 
-	//wait for kernel to finish
+	//*************run template params kernel*******
+	checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
+	auto timetpstart = std::chrono::high_resolution_clock::now();
+	templateparamsKNNRgb<k, labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
 	checkErrorsCuda(cudaDeviceSynchronize());
+	auto timetpend = std::chrono::high_resolution_clock::now();
+	//**********************************************
+
+	std::cout << "naive: " << (timenaiveend - timenaivestart).count() << " template params: " << (timetpend - timetpstart).count() << std::endl;
+
+	//wait for kernel to finish
+	//checkErrorsCuda(cudaDeviceSynchronize());
 	checkLastCudaError("kernel execution failed");
 
 	//get data from device
