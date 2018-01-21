@@ -312,7 +312,9 @@ void main()
 	auto timetpend = std::chrono::high_resolution_clock::now();
 	//**********************************************
 
-	std::cout << "naive: " << (timenaiveend - timenaivestart).count() << " template params: " << (timetpend - timetpstart).count() << std::endl;
+	std::chrono::duration<double, std::milli> timenaive = timenaiveend - timenaivestart;
+	std::chrono::duration<double, std::milli> timetp = timetpend - timetpstart;
+	std::cout << "naive: " << timenaive.count() << " ms template params: " << timetp.count() << " ms" << std::endl;
 
 	//wait for kernel to finish
 	//checkErrorsCuda(cudaDeviceSynchronize());
