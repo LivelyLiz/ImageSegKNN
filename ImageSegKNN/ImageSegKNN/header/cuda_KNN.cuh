@@ -69,7 +69,7 @@ public:
 		}
 
 		//initial votes will be removed while the entries get updated
-		voteCount[0] = newk * 1 / 10000;
+		voteCount[0] = newk * 1.0f / 10000.0f;
 
 		for (int i = 0; i < newk; ++i)
 		{
@@ -144,14 +144,14 @@ public:
 			newk = trainingEntriesCount;
 		}
 
-		//initial votes will be removed while the entries get updated
-		voteCount[0] = newk * 1 / 10000;
-
 		// initialize allocated memory;
 		for (int i = 0; i < labelCount; ++i)
 		{
 			voteCount[i] = 0;
 		}
+
+		//initial votes will be removed while the entries get updated
+		voteCount[0] = newk * 1.0f / 10000.0f;
 
 		for (int i = 0; i < newk; ++i)
 		{
