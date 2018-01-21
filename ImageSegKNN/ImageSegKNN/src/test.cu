@@ -60,6 +60,8 @@ __device__ int getIndexInTrainingsSet(int label, int index, int numColorsPerLabe
 	return label * numColorsPerLabel * 3 + index * 3;
 }
 
+
+//****************************************naive kernel***********************************
 __global__ void naiveKNNRgb(float* picturedata, int numPixels, int k, int labelCount, 
 	float* labelColors, float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel, 
 		int numTrainingsEntries, NeighbourEntry* neighbour_entry, float* voteCount) {
@@ -139,6 +141,8 @@ __global__ void naiveKNNRgb(float* picturedata, int numPixels, int k, int labelC
 	}
 }
 
+
+//************************************template parameter kernel*******************************
 template<int k, int labelCount>
 __global__ void templateparamsKNNRgb(float* picturedata, int numPixels,
 	float* labelColors, float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel,
@@ -220,6 +224,7 @@ __global__ void templateparamsKNNRgb(float* picturedata, int numPixels,
 	}
 }
 
+//*******************************shared memory template parameter*****************************
 template<int k, int labelCount>
 __global__ void sharedKNNRgb(float* picturedata, int numPixels,
 	float* labelColors, float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel,
@@ -324,6 +329,136 @@ __global__ void sharedKNNRgb(float* picturedata, int numPixels,
 	{
 		//printf("winning label %i , color i=%i %f \n", winningLabel, i, sLabelColors[winningLabel * 3 + i]);
 		picturedata[gtid * 3 + i] = sLabelColors[winningLabel * 3 + i];
+	}
+}
+
+//******************************************split kernel**************************************
+__device__ void swap(NeighbourEntry* x, NeighbourEntry* y)
+{
+	NeighbourEntry temp = *x;
+	*x = *y;
+	*y = temp;
+}
+
+template<int labelCount>
+__global__ void computeLength(float* picturedata, NeighbourEntry* neighbours, int numPixels,
+	float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel,
+	int numTrainingsEntries) {
+
+	__shared__ float sTrainingsSet[200 * 3];
+	__shared__ int sTrainingsEntryCount[labelCount];
+
+	int gtid = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if (gtid >= numPixels)
+	{
+		return;
+	}
+
+	if (threadIdx.x < labelCount)
+	{
+		sTrainingsEntryCount[threadIdx.x] = trainingsEntryCount[threadIdx.x];
+
+		for (int i = 0; i < sTrainingsEntryCount[threadIdx.x]; ++i)
+		{
+			sTrainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel)] = trainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel)];
+			sTrainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel) + 1] = trainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel) + 1];
+			sTrainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel) + 2] = trainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel) + 2];
+		}
+	}
+
+	__syncthreads();
+
+	int index = 0;
+
+	for (int i = 0; i < labelCount; ++i)
+	{
+		for (int j = 0; j < sTrainingsEntryCount[i]; ++j)
+		{
+			// get the distance
+			neighbours[gtid * numTrainingsEntries + index] = NeighbourEntry(RgbLab::ColorDistance(&picturedata[gtid * 3], &sTrainingsSet[getIndexInTrainingsSet(i, j, numColorsPerlabel)]), i);
+			index++;
+		}
+	}
+
+	/*for (int i = 0; i < numTrainingsEntries - 1; i++)
+	{
+		for (int j = gtid * numTrainingsEntries; j < gtid * numTrainingsEntries + numTrainingsEntries - i - 1; j++)
+		{
+			if (neighbours[j] > neighbours[j + 1])
+			{
+				swap(&neighbours[j], &neighbours[j + 1]);
+			}
+		}
+	}*/
+}
+
+
+
+__global__ void bubblesort(NeighbourEntry* neighbours, int numPixels, int stride)
+{
+	int gtid = blockDim.x * blockIdx.x + threadIdx.x;
+	if (gtid >= numPixels)
+	{
+		return;
+	}
+
+	for (int i = 0; i < stride - 1; i++)
+	{   
+		for (int j = gtid * stride; j < gtid * stride + stride - i - 1; j++)
+		{
+			if (neighbours[j] > neighbours[j + 1])
+			{
+				swap(&neighbours[j], &neighbours[j + 1]);
+			}
+		}	
+	}
+}
+
+template<int k, int labelCount>
+__global__ void writeLabel(float* picturedata, NeighbourEntry* neighbours, int numPixels, float* labelColors, int numTrainingsEntries)
+{
+	int gtid = blockDim.x * blockIdx.x + threadIdx.x;
+	if (gtid >= numPixels)
+	{
+		return;
+	}
+
+	float voteCount[labelCount];
+
+	int newk = k;
+	if (numTrainingsEntries < newk)
+	{
+		newk = numTrainingsEntries;
+	}
+
+	for (int i = 0; i < labelCount; ++i)
+	{
+		voteCount[i] = 0;
+	}
+
+	// determine the right label based on votes
+	float maxVote = 0;
+	int winningLabel = 0;
+
+	for(int i = gtid * numTrainingsEntries; i < gtid * numTrainingsEntries + newk; ++i)
+	{
+		voteCount[neighbours[i].label] += 1.0f / (neighbours[i].distance + 0.00000001);
+	}
+
+	for (int i = 0; i < labelCount; ++i)
+	{
+		//printf("tid: %i votecount i = %i : %f \n", gtid, i, voteCount[i]);
+		if (maxVote < voteCount[i])
+		{
+			maxVote = voteCount[i];
+			winningLabel = i;
+		}
+	}
+
+	for (int i = 0; i < 3; ++i)
+	{
+		picturedata[gtid * 3 + i] = labelColors[winningLabel * 3 + i];
 	}
 }
 
@@ -538,6 +673,20 @@ void main()
 	auto timesharedend = std::chrono::high_resolution_clock::now();
 	//**********************************************
 
+	//*************run splitted kernel***************
+	checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
+	NeighbourEntry* device_neighbours;
+	checkErrorsCuda(cudaMalloc((void**)&device_neighbours, sizeof(NeighbourEntry) * knn.GetNumTrainingsEntries() * numPixels));
+	auto timesplittedstart = std::chrono::high_resolution_clock::now();
+	computeLength<labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, device_neighbours, numPixels, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
+	checkErrorsCuda(cudaDeviceSynchronize());
+	bubblesort << <num_blocks, num_threads_per_block >> > (device_neighbours, numPixels, knn.GetNumTrainingsEntries());
+	checkErrorsCuda(cudaDeviceSynchronize());
+	writeLabel<k, labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, device_neighbours, numPixels, device_labelColors, knn.GetNumTrainingsEntries());
+	checkErrorsCuda(cudaDeviceSynchronize());
+	auto timesplittedend = std::chrono::high_resolution_clock::now();
+	//***********************************************
+
 	//*************run shared heap kernel*******
 	/*checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
 	auto timeheapstart = std::chrono::high_resolution_clock::now();
@@ -550,7 +699,8 @@ void main()
 	std::chrono::duration<double, std::milli> timenaive = timenaiveend - timenaivestart;
 	std::chrono::duration<double, std::milli> timetp = timetpend - timetpstart;
 	std::chrono::duration<double, std::milli> timeshared = timesharedend - timesharedstart;
-	std::cout << "cpu: " << timecpu.count() << " ms naive: " << timenaive.count() << " ms template params: " << timetp.count() << " ms shared: " << timeshared.count() << " ms" << std::endl;
+	std::chrono::duration<double, std::milli> timesplitted = timesplittedend - timesplittedstart;
+	std::cout << "cpu: " << timecpu.count() << " ms naive: " << timenaive.count() << " ms template params: " << timetp.count() << " ms shared: " << timeshared.count() << " ms splitted: "<< timesplitted.count() << " ms" << std::endl;
 
 
 	//wait for kernel to finish
