@@ -11,7 +11,6 @@ KNN<2>::KNN() : trainingEntriesCount(2), numColorsPerLabel(8)
 
 	int labelCount = 2;
 
-	//not sure about this pointer stuff here
 	trainingsSet = (float*)std::malloc(sizeof(float) * labelCount * numColorsPerLabel * 3);
 
 	trainingsSetCount = (int*)std::malloc(sizeof(int) * 2);
@@ -91,7 +90,7 @@ int KNN<labelCount>::DetermineLabelLab(int k, float* data, bool weighted)
 
 	float* datalab = &RgbLab::RgbToLab(data).color[0];
 
-	// go through each trainingsdata
+	// go through each of the trainingsdata
 	for (int i = 0; i < labelCount; ++i)
 	{
 		for (int j = 0; j < trainingsSetCount[i]; ++j)
@@ -118,6 +117,7 @@ int KNN<labelCount>::DetermineLabelLab(int k, float* data, bool weighted)
 		newk = trainingEntriesCount;
 	}
 
+	//get the k smallest elements
 	for (int i = 0; i < newk; ++i)
 	{
 		NeighbourEntry ne = heap.Pop();
@@ -210,11 +210,13 @@ int KNN<labelCount>::DetermineLabelRgb(int k, float* data, bool weighted)
 template<int labelCount>
 void KNN<labelCount>::AddColorToTrainingsset(float* color, int labelID)
 {
+	//if invalid label given or number of trainingsentries is already at max
 	if (labelID > labelCount - 1 || trainingEntriesCount == maxNumberTrainingEntries)
 	{
 		return;
 	}
 
+	//if not enough memory free, allocate more and copy each color to the new
 	if (trainingsSetCount[labelID] == numColorsPerLabel)
 	{
 		numColorsPerLabel *= 2;
@@ -231,6 +233,7 @@ void KNN<labelCount>::AddColorToTrainingsset(float* color, int labelID)
 		trainingsSet = newTrainingsSet;
 	}
 
+	//add the actual new value
 	assignColorToTrainingsset(color, labelID, trainingsSetCount[labelID]);
 	trainingsSetCount[labelID]++;
 	trainingEntriesCount++;
@@ -239,16 +242,19 @@ void KNN<labelCount>::AddColorToTrainingsset(float* color, int labelID)
 template<int labelCount>
 void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n)
 {
+	//if invalid label is given or number of trainingsdata is at max
 	if (labelID > labelCount - 1 || trainingEntriesCount == maxNumberTrainingEntries)
 	{
 		return;
 	}
 
+	//if there is still capacity, but not enough for all, just add the first
 	if (trainingEntriesCount + n > maxNumberTrainingEntries)
 	{
 		n = maxNumberTrainingEntries - trainingEntriesCount;
 	}
 
+	//determine how much memory will be needed
 	int newColorPerLabelCount = numColorsPerLabel;
 
 	while (trainingsSetCount[labelID] + n > newColorPerLabelCount)
@@ -256,6 +262,7 @@ void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n
 		newColorPerLabelCount *= 2;
 	}
 
+	//allocate new memory and copy old data
 	if (newColorPerLabelCount > numColorsPerLabel)
 	{
 		
@@ -272,6 +279,7 @@ void KNN<labelCount>::AddColorsToTrainingsset(float** colors, int labelID, int n
 		trainingsSet = newTrainingsSet;
 	}
 
+	//actually add the new entries
 	for (int i = 0; i < n; ++i)
 	{
 		assignColorToTrainingsset(colors[i], labelID, trainingsSetCount[labelID]);

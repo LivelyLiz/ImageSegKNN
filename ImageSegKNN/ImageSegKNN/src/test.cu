@@ -11,6 +11,7 @@
 // to compile a header into this main, you have to set 
 //Configuration Properties -> CUDA C/C++ -> Common -> Generate Relocatable Device Code -> Yes (-rdc=true)
 
+// setup KNN instances for specific images
 __host__ KNN<3>* MirrorTestKNN()
 {
 	float* labelColors = (float*)malloc(sizeof(float) * 3 * 3);
@@ -92,6 +93,7 @@ __host__ KNN<3>* TreeTestKNN()
 	return knn;
 }
 
+//helper function
 __device__ int getIndexInTrainingsSet(int label, int index, int numColorsPerLabel)
 {
 	return label * numColorsPerLabel * 3 + index * 3;
@@ -420,17 +422,6 @@ __global__ void computeLength(float* picturedata, NeighbourEntry* neighbours, in
 			index++;
 		}
 	}
-
-	/*for (int i = 0; i < numTrainingsEntries - 1; i++)
-	{
-		for (int j = gtid * numTrainingsEntries; j < gtid * numTrainingsEntries + numTrainingsEntries - i - 1; j++)
-		{
-			if (neighbours[j] > neighbours[j + 1])
-			{
-				swap(&neighbours[j], &neighbours[j + 1]);
-			}
-		}
-	}*/
 }
 
 
@@ -501,13 +492,15 @@ __global__ void writeLabel(float* picturedata, NeighbourEntry* neighbours, int n
 	}
 }
 
-
+//***********************************************************************************
+//*********************************  main  ******************************************
+//***********************************************************************************
 void main()
 {
 	// get number of CUDA devices
 	int deviceCount = 0;
 	cudaGetDeviceCount(&deviceCount);
-	std::cerr << deviceCount << std::endl;
+	std::cerr << "devices found: " << deviceCount << std::endl;
 
 	// set the device
 	cudaSetDevice(0);
@@ -517,7 +510,10 @@ void main()
 	cudaGetDeviceProperties(&props, 0);
 
 	//specify image
-	std::string file = "images/Tree.ppm";
+	//try "Tree" or "MirrorsEdgeTest" here
+	// -> NEED TO USE THE APPROPRIATE KNN INSTANCE BELOW!!
+	std::string imagename = "Tree";
+	std::string file = "images/" + imagename + ".ppm";
 	int xsize = 0;
 	int ysize = 0;
 	int maxrgb = 0;
@@ -528,7 +524,15 @@ void main()
 
 	//make a knn instance to use its data on device
 	const int labelcount = 3;
+
+	std::chrono::duration<double, std::milli> allocationcpu = std::chrono::duration<double, std::milli>();
+	auto cpustart = std::chrono::high_resolution_clock::now();
+	
+	//CHANGE KNN INSTANCE HERE (either TreeTestKNN or MirrorTestKNN)
 	KNN<labelcount> knn = *TreeTestKNN();
+	
+	auto cpuend = std::chrono::high_resolution_clock::now();
+	allocationcpu = cpuend - cpustart;
 
 	//read in image
 	ppma_read(file, xsize, ysize, maxrgb, &r, &g, &b);
@@ -548,7 +552,12 @@ void main()
 	//allocate memory for result
 	float* res = (float*)malloc(sizeof(float) * numPixels * 3);
 
+	std::chrono::duration<double, std::milli> allocationall = std::chrono::duration<double, std::milli>();
+	std::chrono::duration<double, std::milli> allocationsplitted = std::chrono::duration<double, std::milli>();
+	std::chrono::duration<double, std::milli> allocationnaive = std::chrono::duration<double, std::milli>();
+
 	//allocate device memory
+	auto allocallstart = std::chrono::high_resolution_clock::now();
 	float* device_picturedata;
 	checkErrorsCuda(cudaMalloc((void**)&device_picturedata, sizeof(float) * numPixels * 3));
 	checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
@@ -561,7 +570,9 @@ void main()
 	int* device_trainingsEntryCount;
 	checkErrorsCuda(cudaMalloc((void**)&device_trainingsEntryCount, knn.GetSizeOfTrainingsSetCount()));
 	checkErrorsCuda(cudaMemcpy(device_trainingsEntryCount, knn.GetTrainingsSetCount(), knn.GetSizeOfTrainingsSetCount(), cudaMemcpyHostToDevice));
-	
+	auto allocallend = std::chrono::high_resolution_clock::now();
+	allocationall = allocallend - allocallstart;
+
 	// determine thread layout
 	const int max_threads_per_block = props.maxThreadsPerBlock;
 	int num_blocks = (numPixels) / max_threads_per_block;
@@ -571,95 +582,124 @@ void main()
 	}
 	int num_threads_per_block = std::min(numPixels, max_threads_per_block);
 
-	const int k = 8;
+	const int k =7;
 
-	//allocate meomory to work on
+	//allocate memory to work on in naive kernel
+	auto allocnaivestart = std::chrono::high_resolution_clock::now();
 	NeighbourEntry* device_neighbourentry;
 	checkErrorsCuda(cudaMalloc((void**)&device_neighbourentry, sizeof(NeighbourEntry) * k * numPixels));
 	float* device_votecount;
 	checkErrorsCuda(cudaMalloc((void**)&device_votecount, sizeof(float) * labelcount * numPixels));
+	auto allocnaiveend = std::chrono::high_resolution_clock::now();
+
+	//allocate memory for use in splitted kernels
+	NeighbourEntry* device_neighbours;
+	checkErrorsCuda(cudaMalloc((void**)&device_neighbours, sizeof(NeighbourEntry) * knn.GetNumTrainingsEntries() * numPixels));	
+	auto allocsplittedend = std::chrono::high_resolution_clock::now();
+	allocationnaive = allocnaiveend - allocnaivestart;
+	allocationsplitted = allocsplittedend - allocnaiveend;
 
 	int* rnew = (int*)malloc(sizeof(int) * xsize * ysize);
 	int* gnew = (int*)malloc(sizeof(int) * xsize * ysize);
 	int* bnew = (int*)malloc(sizeof(int) * xsize * ysize);
 
-	//*************run CPU***********************
-	auto timecpustart = std::chrono::high_resolution_clock::now();
-	for (int i = 0; i < xsize*ysize; ++i)
+	std::chrono::duration<double, std::milli> timecpu = std::chrono::duration<double, std::milli>();
+	std::chrono::duration<double, std::milli> timenaive = std::chrono::duration<double, std::milli>();
+	std::chrono::duration<double, std::milli> timetp = std::chrono::duration<double, std::milli>();
+	std::chrono::duration<double, std::milli> timeshared = std::chrono::duration<double, std::milli>();
+	std::chrono::duration<double, std::milli> timesplitted = std::chrono::duration<double, std::milli>();
+
+	int numWdh = 10;
+
+	for(int wdh = 0; wdh < numWdh; ++wdh)
 	{
-		float color[3] = { host_picturedata[i * 3], host_picturedata[i * 3 + 1], host_picturedata[i * 3 + 2] };
-		float* labelcolor = knn.GetLabelColor(knn.DetermineLabelRgb<k>( &color[0], true));
-		rnew[i] = (int)(labelcolor[0] * 255);
-		gnew[i] = (int)(labelcolor[1] * 255);
-		bnew[i] = (int)(labelcolor[2] * 255);
+		std::cout << "iteration " << wdh << std::endl;
+		//*************run CPU***********************
+		auto timecpustart = std::chrono::high_resolution_clock::now();
+		for (int i = 0; i < xsize*ysize; ++i)
+		{
+			float color[3] = { host_picturedata[i * 3], host_picturedata[i * 3 + 1], host_picturedata[i * 3 + 2] };
+			float* labelcolor = knn.GetLabelColor(knn.DetermineLabelRgb<k>(&color[0], true));
+			rnew[i] = (int)(labelcolor[0] * 255);
+			gnew[i] = (int)(labelcolor[1] * 255);
+			bnew[i] = (int)(labelcolor[2] * 255);
+		}
+		auto timecpuend = std::chrono::high_resolution_clock::now();
+		timecpu += timecpuend - timecpustart;
+		//*******************************************
+
+		//***********run naive kernel****************
+		auto timenaivestart = std::chrono::high_resolution_clock::now();
+		naiveKNNRgb << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, k, labelcount, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries(), device_neighbourentry, device_votecount);
+		checkErrorsCuda(cudaDeviceSynchronize());
+		auto timenaiveend = std::chrono::high_resolution_clock::now();
+		timenaive += timenaiveend - timenaivestart;
+		//*******************************************
+
+		//*************run template params kernel*******
+		checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
+		auto timetpstart = std::chrono::high_resolution_clock::now();
+		templateparamsKNNRgb<k, labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
+		checkErrorsCuda(cudaDeviceSynchronize());
+		auto timetpend = std::chrono::high_resolution_clock::now();
+		timetp += timetpend - timetpstart;
+		//**********************************************
+
+		//*************run shared kernel*******
+		checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
+		auto timesharedstart = std::chrono::high_resolution_clock::now();
+		sharedKNNRgb<k, labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
+		checkErrorsCuda(cudaDeviceSynchronize());
+		auto timesharedend = std::chrono::high_resolution_clock::now();
+		timeshared += timesharedend - timesharedstart;
+		//**********************************************
+
+		//*************run splitted kernel***************
+		checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
+		auto timesplittedstart = std::chrono::high_resolution_clock::now();
+		computeLength<labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, device_neighbours, numPixels, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
+		checkErrorsCuda(cudaDeviceSynchronize());
+		bubblesort << <num_blocks, num_threads_per_block >> > (device_neighbours, numPixels, knn.GetNumTrainingsEntries());
+		checkErrorsCuda(cudaDeviceSynchronize());
+		writeLabel<k, labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, device_neighbours, numPixels, device_labelColors, knn.GetNumTrainingsEntries());
+		checkErrorsCuda(cudaDeviceSynchronize());
+		auto timesplittedend = std::chrono::high_resolution_clock::now();
+		timesplitted += timesplittedend - timesplittedstart;
+		//***********************************************	
 	}
-	auto timecpuend = std::chrono::high_resolution_clock::now();
-	//*******************************************
-
-	//***********run naive kernel****************
-	auto timenaivestart = std::chrono::high_resolution_clock::now();
-	naiveKNNRgb << <num_blocks, num_threads_per_block>> > (device_picturedata, numPixels, k, labelcount, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries(), device_neighbourentry, device_votecount);
-	checkErrorsCuda(cudaDeviceSynchronize());
-	auto timenaiveend = std::chrono::high_resolution_clock::now();
-	//*******************************************
-	
-	//*************run template params kernel*******
-	checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
-	auto timetpstart = std::chrono::high_resolution_clock::now();
-	templateparamsKNNRgb<k, labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
-	checkErrorsCuda(cudaDeviceSynchronize());
-	auto timetpend = std::chrono::high_resolution_clock::now();
-	//**********************************************
-
-	//*************run shared kernel*******
-	checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
-	auto timesharedstart = std::chrono::high_resolution_clock::now();
-	sharedKNNRgb<k, labelcount> << <num_blocks, num_threads_per_block>> > (device_picturedata, numPixels, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
-	checkErrorsCuda(cudaDeviceSynchronize());
-	auto timesharedend = std::chrono::high_resolution_clock::now();
-	//**********************************************
-
-	//*************run splitted kernel***************
-	checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
-	NeighbourEntry* device_neighbours;
-	checkErrorsCuda(cudaMalloc((void**)&device_neighbours, sizeof(NeighbourEntry) * knn.GetNumTrainingsEntries() * numPixels));
-	auto timesplittedstart = std::chrono::high_resolution_clock::now();
-	computeLength<labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, device_neighbours, numPixels, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
-	checkErrorsCuda(cudaDeviceSynchronize());
-	bubblesort << <num_blocks, num_threads_per_block >> > (device_neighbours, numPixels, knn.GetNumTrainingsEntries());
-	checkErrorsCuda(cudaDeviceSynchronize());
-	writeLabel<k, labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, device_neighbours, numPixels, device_labelColors, knn.GetNumTrainingsEntries());
-	checkErrorsCuda(cudaDeviceSynchronize());
-	auto timesplittedend = std::chrono::high_resolution_clock::now();
-	//***********************************************
-
-	std::chrono::duration<double, std::milli> timecpu = timecpuend - timecpustart;
-	std::chrono::duration<double, std::milli> timenaive = timenaiveend - timenaivestart;
-	std::chrono::duration<double, std::milli> timetp = timetpend - timetpstart;
-	std::chrono::duration<double, std::milli> timeshared = timesharedend - timesharedstart;
-	std::chrono::duration<double, std::milli> timesplitted = timesplittedend - timesplittedstart;
-	std::cout << "cpu: " << timecpu.count() << " ms naive: " << timenaive.count() << " ms template params: " << timetp.count() << " ms shared: " << timeshared.count() << " ms splitted: "<< timesplitted.count() << " ms" << std::endl;
-
-
-	//wait for kernel to finish
-	//checkErrorsCuda(cudaDeviceSynchronize());
 	checkLastCudaError("kernel execution failed");
+
+	//********************************time measurement results*******************************
+	std::cout << "\nKernel execution time" << std::endl;
+	std::cout << "cpu: " << timecpu.count()/numWdh << " ms\nnaive: " << timenaive.count() / numWdh <<
+		" ms\ntemplate params: " << timetp.count() / numWdh <<
+			" ms\nshared: " << timeshared.count() / numWdh <<
+				" ms\nsplitted: "<< timesplitted.count() / numWdh <<
+					" ms" << std::endl;
 
 	//get data from device
 	checkErrorsCuda(cudaMemcpy(res, device_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyDeviceToHost));
 
+	
 	// write data back to 3 intarrays, so it can be written to a file by ppma class
+	allocallstart = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < numPixels; ++i)
 	{
 		r[i] = (int) (res[3*i] * 255);
 		g[i] = (int) (res[3*i + 1] * 255);
 		b[i] = (int) (res[3*i + 2] * 255);
 	}
+	allocallend = std::chrono::high_resolution_clock::now();
+	allocationall += allocallend - allocallstart;
 
-	ppma_write("images/TreeSeg.ppm", xsize, ysize, r, g, b);
-	ppma_write("images/TreeCpu.ppm", xsize, ysize, rnew, gnew, bnew);
+	std::cout << "\nallocation and setting data layout CPU: " << allocationcpu.count() <<"\nallocation and copying GPU: " << allocationall.count() << " ms\n" <<
+		"naive kernel needs additional " << allocationnaive.count() << " ms\n" <<
+		"splitted kernels need additional " << allocationsplitted.count() << " ms" << std::endl;
 
-	printf("ready");
+	ppma_write("images/" + imagename + "Seg.ppm", xsize, ysize, r, g, b);
+	ppma_write("images/" + imagename + "SegCpu.ppm", xsize, ysize, rnew, gnew, bnew);
+
+	printf("ready\n");
 
 	//free host memory
 	free(r);
@@ -677,4 +717,5 @@ void main()
 	cudaFree(device_trainingsSet);
 	cudaFree(device_neighbourentry);
 	cudaFree(device_votecount);
+	cudaFree(device_neighbours);
 }

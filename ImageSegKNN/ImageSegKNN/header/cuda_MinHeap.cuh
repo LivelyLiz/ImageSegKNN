@@ -3,6 +3,7 @@
 #include <crt/host_defines.h>
 #include <driver_types.h>
 
+//actually not usable on cuda device because of recursion :(
 template<class T, int size>
 class MinHeap {
 

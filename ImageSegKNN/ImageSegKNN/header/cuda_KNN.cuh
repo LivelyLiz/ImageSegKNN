@@ -1,4 +1,3 @@
-// lots and lots of pointers and stuff, we might want to change that? But we need this on cuda device, so it's difficult
 #pragma once
 #include <crt/host_defines.h>
 #include "header/cuda_RgbLab.cuh"
@@ -44,11 +43,8 @@ public:
 	__host__ __device__ int DetermineLabelRgb(int k, float* data, bool weighted);
 	__host__ __device__ int DetermineLabelLab(int k, float* data, bool weighted);
 
-	// no-heap implementation 
-	// using a non type template function enables compile time optimization
-	// and it is also possible to allocate memory on the stack instead of heap
-	// in CUDA this means it is at least possible to have the arrays in the registers
-	// instead of global memory -> performance improvement (maybe)!!
+	// no-heap implementation
+	//uses insertion sort
 	template <int k>
 	__host__ __device__ int DetermineLabelRgb(float* data, bool weighted)
 	{
@@ -274,23 +270,22 @@ private:
 	// we can have per label and eventually reallocate
 	int numColorsPerLabel;
 
-	// this is an array (pointer) to number of labels arrays (pointer) 
-	// in which are the colors belonging to the trainingSet (colors are pointers too)
-	// example with 2 labels
-	// [ [[0,0,0], [0,0,0.2]],  [[1,1,1], [1, 0.9, 0.9]] ]
-	// so for the first label, the second color -> float* color = trainingsSet[0][1]
+	//array containing trainingsdata fpr the labels
 	float* trainingsSet;
 
+	//get the r - value of the color in the trainingsset
 	float* getColorInTrainingsset(int label, int index)
 	{
 		return &trainingsSet[label * numColorsPerLabel * 3 + index * 3];
 	}
 
+	//get the index of the r - value of a color in the trainingsset
 	int getIndexInTrainingssset(int label, int index)
 	{
 		return label * numColorsPerLabel * 3 + index * 3;
 	}
 
+	//write color to the trainingsset
 	void assignColorToTrainingsset(float* color, int label, int index)
 	{
 		int i = getIndexInTrainingssset(label, index);
@@ -300,6 +295,7 @@ private:
 		}
 	}
 
+	//write color in the labelcolors array
 	void assignColorToLabel(float* color, int label)
 	{
 		int i = label * 3;
