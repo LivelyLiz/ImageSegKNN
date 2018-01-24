@@ -51,7 +51,7 @@ KNN<labelCount>::KNN(float* labelColors) : labelColors(labelColors), trainingEnt
 		trainingsSetCount[i] = 0;
 	}
 
-	numColorsPerLabel = 16;
+	numColorsPerLabel = 8;
 
 	trainingsSet = (float*)std::malloc(sizeof(float) * labelCount * numColorsPerLabel * 3);
 }

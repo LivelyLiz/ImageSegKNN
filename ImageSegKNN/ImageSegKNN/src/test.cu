@@ -55,6 +55,43 @@ __host__ KNN<3>* MirrorTestKNN()
 	return knn;
 }
 
+__host__ KNN<3>* TreeTestKNN()
+{
+	float* labelColors = (float*)malloc(sizeof(float) * 3 * 3);
+	float* black = RgbLab::MakeColor(0, 0, 0);
+	float* green = RgbLab::MakeColor(0, 255, 0);
+	float* blue = RgbLab::MakeColor(0, 0, 255);
+
+	for (int i = 0; i < 3; ++i)
+	{
+		labelColors[0 * 3 + i] = black[i];
+		labelColors[1 * 3 + i] = green[i];
+		labelColors[2 * 3 + i] = blue[i];
+	}
+
+	int numColorsPerLabel = 10;
+
+	KNN<3>* knn = new KNN<3>(labelColors);
+
+	float** label1colors = (float**)malloc(sizeof(float*) * numColorsPerLabel);
+	float** label2colors = (float**)malloc(sizeof(float*) * numColorsPerLabel);
+	float** label3colors = (float**)malloc(sizeof(float*) * numColorsPerLabel);
+
+	for(int i = 0; i < numColorsPerLabel; ++i)
+	{
+		float lerp = ((float) i / (float) numColorsPerLabel);
+		label1colors[i] = RgbLab::MakeColor((int)(lerp * 50.0), (int)(lerp * 50.0), (int)(lerp * 20.0));
+		label2colors[i] = RgbLab::MakeColor((1-lerp) * 255.0f + lerp * 60.0f, (1 - lerp) * 255.0f + lerp * 100.0f, (1 - lerp) * 20);
+		label3colors[i] = RgbLab::MakeColor((1-lerp) * 255.0f + lerp * 160.0f, (1 - lerp) * 255.0f + lerp * 190, (1 - lerp) * 255.0f + lerp * 255);
+	}
+
+	knn->AddColorsToTrainingsset(label1colors, 0, numColorsPerLabel);
+	knn->AddColorsToTrainingsset(label2colors, 1, numColorsPerLabel);
+	knn->AddColorsToTrainingsset(label3colors, 2, numColorsPerLabel);
+
+	return knn;
+}
+
 __device__ int getIndexInTrainingsSet(int label, int index, int numColorsPerLabel)
 {
 	return label * numColorsPerLabel * 3 + index * 3;
@@ -335,9 +372,12 @@ __global__ void sharedKNNRgb(float* picturedata, int numPixels,
 //******************************************split kernel**************************************
 __device__ void swap(NeighbourEntry* x, NeighbourEntry* y)
 {
-	NeighbourEntry temp = *x;
-	*x = *y;
-	*y = temp;
+	float tempdist = x->distance;
+	int templabel = x->label;
+	x->distance = y->distance;
+	x->label = y->label;
+	y->distance = tempdist;
+	y->label = templabel;
 }
 
 template<int labelCount>
@@ -448,7 +488,6 @@ __global__ void writeLabel(float* picturedata, NeighbourEntry* neighbours, int n
 
 	for (int i = 0; i < labelCount; ++i)
 	{
-		//printf("tid: %i votecount i = %i : %f \n", gtid, i, voteCount[i]);
 		if (maxVote < voteCount[i])
 		{
 			maxVote = voteCount[i];
@@ -462,99 +501,6 @@ __global__ void writeLabel(float* picturedata, NeighbourEntry* neighbours, int n
 	}
 }
 
-/*
-template<int k, int labelCount>
-__global__ void sharedHeapKNNRgb(float* picturedata, int numPixels,
-	float* labelColors, float* trainingsSet, int* trainingsEntryCount, int numColorsPerlabel,
-	int numTrainingsEntries) {
-
-	__shared__ float sTrainingsSet[200 * 3];
-	__shared__ int sTrainingsEntryCount[labelCount];
-	__shared__ float sLabelColors[labelCount * 3];
-
-	int gtid = blockDim.x * blockIdx.x + threadIdx.x;
-
-	if (gtid >= numPixels)
-	{
-		return;
-	}
-
-	if (threadIdx.x < labelCount)
-	{
-		//printf("thread: %i, color %f, %f, %f \n", threadIdx.x, labelColors[threadIdx.x * 3], labelColors[threadIdx.x * 3 + 1], labelColors[threadIdx.x * 3 + 2]);
-		sLabelColors[threadIdx.x * 3] = labelColors[threadIdx.x * 3];
-		sLabelColors[threadIdx.x * 3 + 1] = labelColors[threadIdx.x * 3 + 1];
-		sLabelColors[threadIdx.x * 3 + 2] = labelColors[threadIdx.x * 3 + 2];
-
-		//printf("thread: %i, shared color %f, %f, %f \n", threadIdx.x, sLabelColors[threadIdx.x * 3], sLabelColors[threadIdx.x * 3 + 1], sLabelColors[threadIdx.x * 3 + 2]);
-
-		sTrainingsEntryCount[threadIdx.x] = trainingsEntryCount[threadIdx.x];
-
-		for (int i = 0; i < sTrainingsEntryCount[threadIdx.x]; ++i)
-		{
-			sTrainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel)] = trainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel)];
-			sTrainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel) + 1] = trainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel) + 1];
-			sTrainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel) + 2] = trainingsSet[getIndexInTrainingsSet(threadIdx.x, i, numColorsPerlabel) + 2];
-		}
-	}
-
-	__syncthreads();
-
-	printf("3");
-
-	MinHeap<NeighbourEntry, 200> heap;
-
-	printf("34");
-
-	// go through each trainingsdata
-	for (int i = 0; i < labelCount; ++i)
-	{
-		for (int j = 0; j < sTrainingsEntryCount[i]; ++j)
-		{
-			// get the distance
-			float length = RgbLab::ColorDistance(&picturedata[gtid * 3], &sTrainingsSet[getIndexInTrainingsSet(i, j, numColorsPerlabel)]);
-
-			heap.Insert(NeighbourEntry(length, i));
-		}
-	}
-
-	float voteCount[labelCount];
-	for (int i = 0; i < labelCount; ++i)
-	{
-		voteCount[i] = 0;
-	}
-
-	//avoid false results by using at max the amount of trainingsentries
-	int newk = k;
-	if (numTrainingsEntries < newk)
-	{
-		newk = numTrainingsEntries;
-	}
-
-	for (int i = 0; i < newk; ++i)
-	{
-		NeighbourEntry ne = heap.Pop();
-		voteCount[ne.label] += 1.0f / (ne.distance + 0.0000001);
-	}
-
-	// determine the right label based on votes
-	float maxVote = 0;
-	int winningLabel = 0;
-
-	for (int i = 0; i < labelCount; ++i)
-	{
-		if (maxVote < voteCount[i])
-		{
-			maxVote = voteCount[i];
-			winningLabel = i;
-		}
-	}
-
-	for (int i = 0; i < 3; ++i)
-	{
-		picturedata[gtid * 3 + i] = sLabelColors[winningLabel * 3 + i];
-	}
-}*/
 
 void main()
 {
@@ -571,7 +517,7 @@ void main()
 	cudaGetDeviceProperties(&props, 0);
 
 	//specify image
-	std::string file = "images/MirrorsEdgeTest.ppm";
+	std::string file = "images/Tree.ppm";
 	int xsize = 0;
 	int ysize = 0;
 	int maxrgb = 0;
@@ -582,7 +528,7 @@ void main()
 
 	//make a knn instance to use its data on device
 	const int labelcount = 3;
-	KNN<labelcount> knn = *MirrorTestKNN();
+	KNN<labelcount> knn = *TreeTestKNN();
 
 	//read in image
 	ppma_read(file, xsize, ysize, maxrgb, &r, &g, &b);
@@ -625,7 +571,7 @@ void main()
 	}
 	int num_threads_per_block = std::min(numPixels, max_threads_per_block);
 
-	const int k = 7;
+	const int k = 8;
 
 	//allocate meomory to work on
 	NeighbourEntry* device_neighbourentry;
@@ -648,14 +594,14 @@ void main()
 		bnew[i] = (int)(labelcolor[2] * 255);
 	}
 	auto timecpuend = std::chrono::high_resolution_clock::now();
-	//******************************************
+	//*******************************************
 
-	//***********run naive kernel***************
+	//***********run naive kernel****************
 	auto timenaivestart = std::chrono::high_resolution_clock::now();
 	naiveKNNRgb << <num_blocks, num_threads_per_block>> > (device_picturedata, numPixels, k, labelcount, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries(), device_neighbourentry, device_votecount);
 	checkErrorsCuda(cudaDeviceSynchronize());
 	auto timenaiveend = std::chrono::high_resolution_clock::now();
-	//******************************************
+	//*******************************************
 	
 	//*************run template params kernel*******
 	checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
@@ -687,14 +633,6 @@ void main()
 	auto timesplittedend = std::chrono::high_resolution_clock::now();
 	//***********************************************
 
-	//*************run shared heap kernel*******
-	/*checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
-	auto timeheapstart = std::chrono::high_resolution_clock::now();
-	sharedHeapKNNRgb<k, labelcount> << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries());
-	checkErrorsCuda(cudaDeviceSynchronize());
-	auto timeheapend = std::chrono::high_resolution_clock::now();*/
-	//**********************************************
-
 	std::chrono::duration<double, std::milli> timecpu = timecpuend - timecpustart;
 	std::chrono::duration<double, std::milli> timenaive = timenaiveend - timenaivestart;
 	std::chrono::duration<double, std::milli> timetp = timetpend - timetpstart;
@@ -718,8 +656,8 @@ void main()
 		b[i] = (int) (res[3*i + 2] * 255);
 	}
 
-	ppma_write("images/MirrorsEdgeTestSeg.ppm", xsize, ysize, r, g, b);
-	ppma_write("images/MirrorsEdgeTestSegCpu.ppm", xsize, ysize, rnew, gnew, bnew);
+	ppma_write("images/TreeSeg.ppm", xsize, ysize, r, g, b);
+	ppma_write("images/TreeCpu.ppm", xsize, ysize, rnew, gnew, bnew);
 
 	printf("ready");
 
