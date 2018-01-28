@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <chrono>
 
-// to compile a header into this main, you have to set 
+// to compile a header into this main (in VS), you have to set
 //Configuration Properties -> CUDA C/C++ -> Common -> Generate Relocatable Device Code -> Yes (-rdc=true)
 
 // setup KNN instances for specific images
@@ -59,7 +59,7 @@ __host__ KNN<3>* MirrorTestKNN()
 __host__ KNN<3>* TreeTestKNN()
 {
 	float* labelColors = (float*)malloc(sizeof(float) * 3 * 3);
-	float* black = RgbLab::MakeColor(0, 0, 0);
+	float* black = RgbLab::MakeColor(255, 0, 0);
 	float* green = RgbLab::MakeColor(0, 255, 0);
 	float* blue = RgbLab::MakeColor(0, 0, 255);
 
@@ -70,7 +70,7 @@ __host__ KNN<3>* TreeTestKNN()
 		labelColors[2 * 3 + i] = blue[i];
 	}
 
-	int numColorsPerLabel = 10;
+	int numColorsPerLabel = 4;
 
 	KNN<3>* knn = new KNN<3>(labelColors);
 
@@ -512,7 +512,7 @@ void main()
 	//specify image
 	//try "Tree" or "MirrorsEdgeTest" here
 	// -> NEED TO USE THE APPROPRIATE KNN INSTANCE BELOW!!
-	std::string imagename = "Tree";
+	std::string imagename = "TreeSmall";
 	std::string file = "images/" + imagename + ".ppm";
 	int xsize = 0;
 	int ysize = 0;
@@ -582,6 +582,10 @@ void main()
 	}
 	int num_threads_per_block = std::min(numPixels, max_threads_per_block);
 
+	int factor = 8;
+	num_blocks *= factor;
+	num_threads_per_block /= factor;
+
 	const int k =7;
 
 	//allocate memory to work on in naive kernel
@@ -629,6 +633,7 @@ void main()
 		//*******************************************
 
 		//***********run naive kernel****************
+		checkErrorsCuda(cudaMemcpy(device_picturedata, host_picturedata, sizeof(float) * numPixels * 3, cudaMemcpyHostToDevice));
 		auto timenaivestart = std::chrono::high_resolution_clock::now();
 		naiveKNNRgb << <num_blocks, num_threads_per_block >> > (device_picturedata, numPixels, k, labelcount, device_labelColors, device_trainingsSet, device_trainingsEntryCount, knn.GetNumColorsPerLabel(), knn.GetNumTrainingsEntries(), device_neighbourentry, device_votecount);
 		checkErrorsCuda(cudaDeviceSynchronize());
